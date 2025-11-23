@@ -1,8 +1,8 @@
 import os
 import json
 import threading
-import ssl
-import smtplib
+# import ssl
+# import smtplib
 import time
 import sys
 import traceback
