@@ -33,8 +33,8 @@ jobs:
             libffi-dev libssl-dev \
             build-essential \
             autoconf automake pkg-config \
-            libtool libtool-bin m4 \
-            zlib1g-dev
+            libtool libtool-bin libltdl-dev autoconf-archive m4 \
+            zlib1g-dev gettext
 
       - name: Install Buildozer
         run: |
@@ -43,6 +43,8 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Build APK
+        env:
+          ACLOCAL_PATH: /usr/share/aclocal
         run: |
           python -m buildozer android debug
 
