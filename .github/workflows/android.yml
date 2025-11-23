@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repo
@@ -20,23 +20,22 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt update
-          sudo apt install -y \
-            git zip unzip openjdk-17-jdk \
+          sudo apt-get update
+          sudo apt-get install -y \
+            openjdk-17-jdk \
+            git zip unzip \
             python3-pip python3-venv \
-            libffi-dev libssl-dev \
             build-essential \
-            autoconf automake libtool pkg-config \
-            zlib1g-dev
+            autoconf automake libtool libtool-bin \
+            autoconf-archive m4 gettext \
+            pkg-config cmake \
+            libffi-dev libssl-dev zlib1g-dev \
+            liblzma-dev libsqlite3-dev
 
       - name: Install Buildozer and Cython
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip setuptools wheel
           pip install buildozer cython==0.29.36
-
-      - name: Initialize Buildozer (only if spec missing)
-        run: |
-          if [ ! -f buildozer.spec ]; then buildozer init; fi
 
       - name: Build APK
         run: |
