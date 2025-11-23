@@ -1,7 +1,7 @@
 [app]
 title = My Application
 package.name = myapp
-package.domain = org.test
+package.domain = org.rezaa7med
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 version = 0.1
