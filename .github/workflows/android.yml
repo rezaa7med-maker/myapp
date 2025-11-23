@@ -26,8 +26,9 @@ jobs:
             python3-pip python3-venv \
             libffi-dev libssl-dev \
             build-essential \
-            autoconf automake libtool pkg-config \
-            zlib1g-dev
+            autoconf automake pkg-config \
+            libtool libtool-bin autoconf-archive m4 \
+            zlib1g-dev libltdl-dev
 
       - name: Install buildozer and cython
         run: |
