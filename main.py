@@ -31,21 +31,28 @@ def load_sent_titles(filename: str) -> set:
         return set(line for line in lines if line)
     except FileNotFoundError:
         return set()
+    except Exception:
+        return set()
 
 
 def append_sent_titles(filename: str, titles: list) -> None:
     if not titles:
         return
-    with open(filename, "a", encoding="utf-8") as f:
-        for title in titles:
-            safe_title = title.replace("\n", " ")
-            f.write(safe_title + "\n")
+    try:
+        with open(filename, "a", encoding="utf-8") as f:
+            for title in titles:
+                safe_title = title.replace("\n", " ")
+                f.write(safe_title + "\n")
+    except Exception:
+        pass
 
 
 def collect_news() -> list:
     all_items = []
+
     for url in RSS_FEEDS:
         feed = feedparser.parse(url)
+
         for entry in feed.entries:
             title = getattr(entry, "title", "").strip()
             summary = getattr(entry, "summary", "").strip()
@@ -54,7 +61,38 @@ def collect_news() -> list:
             if not summary:
                 summary = title
             all_items.append((title, summary))
+
     return all_items
+
+
+def send_emails(sender_email, app_password, to_emails, news_items, log_func=print) -> None:
+    import ssl
+    import smtplib
+
+    context = ssl.create_default_context()
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+        server.login(sender_email, app_password)
+
+        for title, summary in news_items:
+            subject = title
+            body = summary
+
+            message_lines = [
+                f"To: {', '.join(to_emails)}",
+                f"Subject: {subject}",
+                "",
+                body,
+            ]
+            message = "\n".join(message_lines)
+
+            server.sendmail(
+                sender_email,
+                to_emails,
+                message.encode("utf-8"),
+            )
+
+            log_func(f"Email sent from {sender_email}: {subject}")
 
 
 class NewsApp(App):
@@ -91,6 +129,7 @@ class NewsApp(App):
         self.editing_sender_index = None
 
         self.menu_view = None
+
         self.last_back_press_time = 0.0
 
     def build(self):
@@ -109,14 +148,26 @@ class NewsApp(App):
         )
         menu_button.bind(on_press=self.on_menu_pressed)
 
-        title_label = Label(text="News Mailer", font_size="20sp", size_hint=(1, 1))
+        title_label = Label(
+            text="News Mailer",
+            font_size="20sp",
+            size_hint=(1, 1),
+        )
 
         top_bar.add_widget(menu_button)
         top_bar.add_widget(title_label)
 
-        senders_title = Label(text="Sender emails", size_hint=(1, None), height=30)
+        senders_title = Label(
+            text="Sender emails",
+            size_hint=(1, None),
+            height=30,
+        )
 
-        self.senders_layout = BoxLayout(orientation="vertical", spacing=5, size_hint=(1, None))
+        self.senders_layout = BoxLayout(
+            orientation="vertical",
+            spacing=5,
+            size_hint=(1, None),
+        )
         self.senders_layout.bind(minimum_height=self.senders_layout.setter("height"))
 
         add_sender_btn = Button(
@@ -128,9 +179,17 @@ class NewsApp(App):
         )
         add_sender_btn.bind(on_press=self.on_add_sender_pressed)
 
-        recipients_title = Label(text="Recipients", size_hint=(1, None), height=30)
+        recipients_title = Label(
+            text="Recipients",
+            size_hint=(1, None),
+            height=30,
+        )
 
-        self.recipients_layout = BoxLayout(orientation="vertical", spacing=5, size_hint=(1, None))
+        self.recipients_layout = BoxLayout(
+            orientation="vertical",
+            spacing=5,
+            size_hint=(1, None),
+        )
         self.recipients_layout.bind(minimum_height=self.recipients_layout.setter("height"))
         self.recipient_inputs = []
 
@@ -161,7 +220,7 @@ class NewsApp(App):
         save_button.bind(on_press=self.on_save_pressed)
 
         self.send_button = Button(
-            text="Send (TEST MODE)",
+            text="Send",
             size_hint=(1, None),
             height=50,
             background_normal="",
@@ -169,10 +228,14 @@ class NewsApp(App):
         )
         self.send_button.bind(on_press=self.on_send_pressed)
 
-        self.total_label = Label(text="Total emails sent: 0", size_hint=(1, None), height=30)
+        self.total_label = Label(
+            text="Total emails sent: 0",
+            size_hint=(1, None),
+            height=30,
+        )
 
         self.status_label = Label(
-            text="Test build. App should open without crash.",
+            text="Add senders, recipients and max emails, then tap Send.",
             size_hint=(1, None),
             height=40,
         )
@@ -200,13 +263,21 @@ class NewsApp(App):
         return root
 
     def on_start(self):
-        self.config_file = os.path.join(self.user_data_dir, "config.json")
-        self.sent_file = os.path.join(self.user_data_dir, "sent_titles.txt")
-        self.pin_file = os.path.join(self.user_data_dir, "pin.json")
-        self.stats_file = os.path.join(self.user_data_dir, "stats.json")
+        try:
+            self.config_file = os.path.join(self.user_data_dir, "config.json")
+            self.sent_file = os.path.join(self.user_data_dir, "sent_titles.txt")
+            self.pin_file = os.path.join(self.user_data_dir, "pin.json")
+            self.stats_file = os.path.join(self.user_data_dir, "stats.json")
 
-        self.load_config()
-        Clock.schedule_once(lambda dt: self.login_view.open(), 0)
+            self.load_config()
+            self.load_pin()
+            self.load_stats()
+            self.update_total_label()
+
+            Clock.schedule_once(lambda dt: self.login_view.open(), 0)
+        except Exception as e:
+            if self.status_label:
+                self.status_label.text = f"Startup error: {e}"
 
     def on_keyboard(self, window, key, scancode, codepoint, modifiers):
         if key == 27:
@@ -216,11 +287,14 @@ class NewsApp(App):
     def handle_back_button(self):
         now = time.time()
         if now - self.last_back_press_time < 1.5:
-            App.get_running_app().stop()
+            self.exit_app()
         else:
             self.last_back_press_time = now
             self.status_label.text = "Press back again to exit."
         return True
+
+    def exit_app(self):
+        App.get_running_app().stop()
 
     def create_login_view(self):
         self.login_view = ModalView(size_hint=(1, 1), auto_dismiss=False)
@@ -245,51 +319,142 @@ class NewsApp(App):
             background_normal="",
             background_color=(0.2, 0.5, 0.8, 1),
         )
-        unlock_btn.bind(on_press=lambda x: self.login_view.dismiss())
+        unlock_btn.bind(on_press=self.on_unlock_pressed)
+
+        self.login_status_label = Label(text="", size_hint=(1, None), height=30)
 
         layout.add_widget(title)
         layout.add_widget(subtitle)
         layout.add_widget(self.pin_input)
         layout.add_widget(unlock_btn)
+        layout.add_widget(self.login_status_label)
 
         self.login_view.add_widget(layout)
+
+    def on_unlock_pressed(self, instance):
+        pin = self.pin_input.text.strip()
+
+        if len(pin) != 4 or not pin.isdigit():
+            self.login_status_label.text = "PIN must be 4 digits."
+            return
+
+        if self.stored_pin is None:
+            self.stored_pin = pin
+            self.save_pin(pin)
+            self.login_status_label.text = "PIN set."
+            self.pin_input.text = ""
+            Clock.schedule_once(lambda dt: self.login_view.dismiss(), 0.5)
+        else:
+            if pin == self.stored_pin:
+                self.login_status_label.text = "Welcome."
+                self.pin_input.text = ""
+                Clock.schedule_once(lambda dt: self.login_view.dismiss(), 0.2)
+            else:
+                self.login_status_label.text = "Incorrect PIN."
+
+    def load_pin(self):
+        try:
+            with open(self.pin_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                self.stored_pin = data.get("pin")
+        except FileNotFoundError:
+            self.stored_pin = None
+        except Exception:
+            self.stored_pin = None
+
+    def save_pin(self, pin: str):
+        try:
+            with open(self.pin_file, "w", encoding="utf-8") as f:
+                json.dump({"pin": pin}, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def load_stats(self):
+        try:
+            with open(self.stats_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                self.total_sent = int(data.get("total_sent", 0))
+        except FileNotFoundError:
+            self.total_sent = 0
+        except Exception:
+            self.total_sent = 0
+
+    def save_stats(self):
+        try:
+            with open(self.stats_file, "w", encoding="utf-8") as f:
+                json.dump({"total_sent": self.total_sent}, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def update_total_label(self):
+        def _update(dt):
+            if self.total_label:
+                self.total_label.text = f"Total emails sent: {self.total_sent}"
+        Clock.schedule_once(_update, 0)
 
     def create_loading_view(self):
         self.loading_view = ModalView(size_hint=(0.6, 0.25), auto_dismiss=False)
         inner = BoxLayout(orientation="vertical", padding=20, spacing=10)
+
+        label_title = Label(text="Sending...", font_size="18sp", size_hint=(1, None), height=30)
         self.loading_label = Label(text="Please wait", size_hint=(1, None), height=30)
-        inner.add_widget(Label(text="Sending...", font_size="18sp", size_hint=(1, None), height=30))
+
+        inner.add_widget(label_title)
         inner.add_widget(self.loading_label)
+
         self.loading_view.add_widget(inner)
 
     def show_loading(self, message="Sending..."):
-        self.loading_label.text = message
-        if not self.loading_view.parent:
-            self.loading_view.open()
+        def _show(dt):
+            self.loading_label.text = message
+            if not self.loading_view.parent:
+                self.loading_view.open()
+        Clock.schedule_once(_show, 0)
 
-    def hide_loading(self):
-        if self.loading_view.parent:
-            self.loading_view.dismiss()
+    def hide_loading_and_set_status(self, status_text="Done!"):
+        def _hide(dt):
+            if self.loading_view.parent:
+                self.loading_view.dismiss()
+            self.status_label.text = status_text
+            self.send_button.disabled = False
+        Clock.schedule_once(_hide, 0)
 
     def create_menu_view(self):
         self.menu_view = ModalView(size_hint=(0.6, 0.5), auto_dismiss=True)
         layout = BoxLayout(orientation="vertical", padding=20, spacing=10)
+
         layout.add_widget(Label(text="Menu", font_size="18sp", size_hint=(1, None), height=30))
+
         close_btn = Button(text="Close", size_hint=(1, None), height=40)
         close_btn.bind(on_press=lambda instance: self.menu_view.dismiss())
+
         layout.add_widget(close_btn)
         self.menu_view.add_widget(layout)
 
     def on_menu_pressed(self, instance):
-        self.menu_view.open()
+        if self.menu_view:
+            self.menu_view.open()
 
     def create_sender_modal(self):
         self.sender_modal = ModalView(size_hint=(0.9, 0.5), auto_dismiss=True)
         layout = BoxLayout(orientation="vertical", padding=20, spacing=10)
+
         self.sender_modal_title = Label(text="Add sender email", font_size="18sp", size_hint=(1, None), height=30)
 
-        self.sender_email_input = TextInput(hint_text="Sender email (Gmail)", multiline=False, size_hint=(1, None), height=40)
-        self.sender_password_input = TextInput(hint_text="App Password (16 chars)", multiline=False, password=True, size_hint=(1, None), height=40)
+        self.sender_email_input = TextInput(
+            hint_text="Sender email (Gmail)",
+            multiline=False,
+            size_hint=(1, None),
+            height=40,
+        )
+
+        self.sender_password_input = TextInput(
+            hint_text="App Password (16 chars)",
+            multiline=False,
+            password=True,
+            size_hint=(1, None),
+            height=40,
+        )
 
         save_btn = Button(text="Save", size_hint=(1, None), height=45)
         save_btn.bind(on_press=self.on_sender_save)
@@ -302,6 +467,8 @@ class NewsApp(App):
         self.sender_modal.add_widget(layout)
 
     def on_add_sender_pressed(self, instance):
+        self.editing_sender_index = None
+        self.sender_modal_title.text = "Add sender email"
         self.sender_email_input.text = ""
         self.sender_password_input.text = ""
         self.sender_modal.open()
@@ -309,69 +476,6 @@ class NewsApp(App):
     def on_sender_save(self, instance):
         email = self.sender_email_input.text.strip()
         password = self.sender_password_input.text.strip()
-        if email and password:
-            self.senders.append({"email": email, "password": password})
-        self.sender_modal.dismiss()
-        self.update_senders_ui()
-        self.save_config()
 
-    def update_senders_ui(self):
-        self.senders_layout.clear_widgets()
-        for s in self.senders:
-            self.senders_layout.add_widget(Label(text=s["email"], size_hint=(1, None), height=30))
-
-    def on_add_recipient(self, instance=None, initial_value=""):
-        row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=40, spacing=5)
-        inp = TextInput(text=initial_value, hint_text="Recipient email", multiline=False)
-        row.add_widget(inp)
-        self.recipients_layout.add_widget(row)
-        self.recipient_inputs.append(inp)
-
-    def get_recipients_from_ui(self):
-        return [inp.text.strip() for inp in self.recipient_inputs if inp.text.strip()]
-
-    def get_config_from_ui(self):
-        max_emails = int(self.max_emails_input.text.strip() or "2")
-        return {"senders": self.senders, "recipients": self.get_recipients_from_ui(), "max_emails": max_emails}
-
-    def save_config(self):
-        cfg = self.get_config_from_ui()
-        try:
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, ensure_ascii=False, indent=2)
-        except:
-            pass
-
-    def load_config(self):
-        if not self.config_file or not os.path.exists(self.config_file):
-            self.on_add_recipient()
-            return
-        try:
-            with open(self.config_file, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            self.senders = cfg.get("senders", [])
-            self.update_senders_ui()
-            self.max_emails_input.text = str(cfg.get("max_emails", 2))
-            for r in cfg.get("recipients", []) or [""]:
-                self.on_add_recipient(initial_value=r)
-        except:
-            self.on_add_recipient()
-
-    # --------- TEST SEND (NO NETWORK) ---------
-    def on_save_pressed(self, instance):
-        self.save_config()
-        self.status_label.text = "Saved."
-
-    def on_send_pressed(self, instance):
-        self.send_button.disabled = True
-        self.show_loading("TEST: no network call")
-        Clock.schedule_once(self.fake_send_done, 1.5)
-
-    def fake_send_done(self, dt):
-        self.hide_loading()
-        self.status_label.text = "TEST OK. App did not crash."
-        self.send_button.disabled = False
-
-
-if __name__ == "__main__":
-    NewsApp().run()
+        if not email or not password:
+            self.status_label.text = "Sender email and App Password are required."
