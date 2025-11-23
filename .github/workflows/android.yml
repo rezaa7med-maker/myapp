@@ -24,6 +24,20 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
+      # Cache pip, buildozer, gradle, android
+      - name: Cache build dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.buildozer
+            .buildozer
+            ~/.gradle
+            ~/.android
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
       - name: Install system deps
         run: |
           sudo apt update
@@ -43,14 +57,12 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # Fix: call sdkmanager via its full path so it won't be "command not found"
       - name: Accept Android SDK licenses
         run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses
 
       - name: Build APK
         run: buildozer android debug
 
-      # Debug: show where apk is created
       - name: List APK outputs
         run: |
           echo "Listing bin directory:"
