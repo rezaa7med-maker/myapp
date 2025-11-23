@@ -35,7 +35,6 @@ jobs:
           pip install buildozer cython==0.29.36
 
       - name: Build APK
-        working-directory: myapp
         run: |
           buildozer android debug
 
@@ -43,5 +42,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: myapp/bin/*.apk
+          path: bin/*.apk
           if-no-files-found: error
