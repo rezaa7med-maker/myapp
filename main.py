@@ -4,6 +4,9 @@ import threading
 import ssl
 import smtplib
 import time
+import sys
+import traceback
+import logging
 
 import feedparser
 
@@ -27,6 +30,32 @@ RSS_FEEDS = [
 ]
 
 
+# --------- LOGGING SETUP ---------
+def setup_logging(log_path: str):
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(log_path, encoding="utf-8"),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+
+    def handle_exception(exc_type, exc_value, exc_tb):
+        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        logging.critical("UNCAUGHT EXCEPTION:\n%s", tb_text)
+
+    sys.excepthook = handle_exception
+    logging.info("Logging initialized. Log file: %s", log_path)
+
+
+def log_exception(prefix="ERROR"):
+    tb_text = traceback.format_exc()
+    logging.error("%s:\n%s", prefix, tb_text)
+
+
 # --------- UTILITY FUNCTIONS ---------
 def load_sent_titles(filename: str) -> set:
     try:
@@ -35,60 +64,75 @@ def load_sent_titles(filename: str) -> set:
         return set(line for line in lines if line)
     except FileNotFoundError:
         return set()
+    except Exception:
+        log_exception("load_sent_titles failed")
+        return set()
 
 
 def append_sent_titles(filename: str, titles: list) -> None:
     if not titles:
         return
-    with open(filename, "a", encoding="utf-8") as f:
-        for title in titles:
-            safe_title = title.replace("\n", " ")
-            f.write(safe_title + "\n")
+    try:
+        with open(filename, "a", encoding="utf-8") as f:
+            for title in titles:
+                safe_title = title.replace("\n", " ")
+                f.write(safe_title + "\n")
+    except Exception:
+        log_exception("append_sent_titles failed")
 
 
 def collect_news() -> list:
     all_items = []
+    try:
+        for url in RSS_FEEDS:
+            logging.info("Fetching RSS: %s", url)
+            feed = feedparser.parse(url)
 
-    for url in RSS_FEEDS:
-        feed = feedparser.parse(url)
-
-        for entry in feed.entries:
-            title = getattr(entry, "title", "").strip()
-            summary = getattr(entry, "summary", "").strip()
-            if not title:
-                continue
-            if not summary:
-                summary = title
-            all_items.append((title, summary))
+            for entry in feed.entries:
+                title = getattr(entry, "title", "").strip()
+                summary = getattr(entry, "summary", "").strip()
+                if not title:
+                    continue
+                if not summary:
+                    summary = title
+                all_items.append((title, summary))
+    except Exception:
+        log_exception("collect_news failed")
 
     return all_items
 
 
 def send_emails(sender_email, app_password, to_emails, news_items, log_func=print) -> None:
-    context = ssl.create_default_context()
+    try:
+        context = ssl.create_default_context()
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-        server.login(sender_email, app_password)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+            server.login(sender_email, app_password)
 
-        for title, summary in news_items:
-            subject = title
-            body = summary
+            for title, summary in news_items:
+                subject = title
+                body = summary
 
-            message_lines = [
-                f"To: {', '.join(to_emails)}",
-                f"Subject: {subject}",
-                "",
-                body,
-            ]
-            message = "\n".join(message_lines)
+                message_lines = [
+                    f"To: {', '.join(to_emails)}",
+                    f"Subject: {subject}",
+                    "",
+                    body,
+                ]
+                message = "\n".join(message_lines)
 
-            server.sendmail(
-                sender_email,
-                to_emails,
-                message.encode("utf-8"),
-            )
+                server.sendmail(
+                    sender_email,
+                    to_emails,
+                    message.encode("utf-8"),
+                )
 
-            log_func(f"Email sent from {sender_email}: {subject}")
+                log_func(f"Email sent from {sender_email}: {subject}")
+                logging.info("Email sent from %s | subject=%s", sender_email, subject)
+
+    except Exception:
+        log_exception("send_emails failed")
+        raise
 
 
 # --------- MAIN APP ---------
@@ -101,9 +145,8 @@ class NewsApp(App):
         self.stats_file = None
         self.stored_pin = None
 
-        self.total_sent = 0  # total number of emails sent (per sender/news item)
-
-        self.senders = []  # list of dicts: {"email": ..., "password": ...}
+        self.total_sent = 0
+        self.senders = []
 
         self.senders_layout = None
         self.recipients_layout = None
@@ -124,19 +167,16 @@ class NewsApp(App):
         self.sender_modal_title = None
         self.sender_email_input = None
         self.sender_password_input = None
-        self.editing_sender_index = None  # None = adding new, int = editing
+        self.editing_sender_index = None
 
         self.menu_view = None
-
         self.last_back_press_time = 0.0
 
     def build(self):
-        # Soft background color
         Window.clearcolor = (0.95, 0.97, 0.99, 1)
 
         root = BoxLayout(orientation="vertical", padding=16, spacing=10)
 
-        # Top bar: menu button + title
         top_bar = BoxLayout(orientation="horizontal", size_hint=(1, None), height=40, spacing=8)
 
         menu_button = Button(
@@ -157,18 +197,9 @@ class NewsApp(App):
         top_bar.add_widget(menu_button)
         top_bar.add_widget(title_label)
 
-        # Sender emails section
-        senders_title = Label(
-            text="Sender emails",
-            size_hint=(1, None),
-            height=30,
-        )
+        senders_title = Label(text="Sender emails", size_hint=(1, None), height=30)
 
-        self.senders_layout = BoxLayout(
-            orientation="vertical",
-            spacing=5,
-            size_hint=(1, None),
-        )
+        self.senders_layout = BoxLayout(orientation="vertical", spacing=5, size_hint=(1, None))
         self.senders_layout.bind(minimum_height=self.senders_layout.setter("height"))
 
         add_sender_btn = Button(
@@ -180,18 +211,9 @@ class NewsApp(App):
         )
         add_sender_btn.bind(on_press=self.on_add_sender_pressed)
 
-        # Recipients section
-        recipients_title = Label(
-            text="Recipients",
-            size_hint=(1, None),
-            height=30,
-        )
+        recipients_title = Label(text="Recipients", size_hint=(1, None), height=30)
 
-        self.recipients_layout = BoxLayout(
-            orientation="vertical",
-            spacing=5,
-            size_hint=(1, None),
-        )
+        self.recipients_layout = BoxLayout(orientation="vertical", spacing=5, size_hint=(1, None))
         self.recipients_layout.bind(minimum_height=self.recipients_layout.setter("height"))
         self.recipient_inputs = []
 
@@ -204,7 +226,6 @@ class NewsApp(App):
         )
         add_recipient_btn.bind(on_press=self.on_add_recipient)
 
-        # Max emails
         self.max_emails_input = TextInput(
             hint_text="Max emails per send (e.g. 2, 10, 20)",
             multiline=False,
@@ -213,7 +234,6 @@ class NewsApp(App):
             height=40,
         )
 
-        # Buttons
         save_button = Button(
             text="Save",
             size_hint=(1, None),
@@ -232,21 +252,14 @@ class NewsApp(App):
         )
         self.send_button.bind(on_press=self.on_send_pressed)
 
-        # Total label (always visible)
-        self.total_label = Label(
-            text="Total emails sent: 0",
-            size_hint=(1, None),
-            height=30,
-        )
+        self.total_label = Label(text="Total emails sent: 0", size_hint=(1, None), height=30)
 
-        # Status label
         self.status_label = Label(
             text="Add senders, recipients and max emails, then tap Send.",
             size_hint=(1, None),
             height=40,
         )
 
-        # Assemble root layout
         root.add_widget(top_bar)
         root.add_widget(senders_title)
         root.add_widget(self.senders_layout)
@@ -260,18 +273,22 @@ class NewsApp(App):
         root.add_widget(self.total_label)
         root.add_widget(self.status_label)
 
-        # Overlays
         self.create_login_view()
         self.create_loading_view()
         self.create_sender_modal()
         self.create_menu_view()
 
-        # Back button handling (Android)
         Window.bind(on_keyboard=self.on_keyboard)
 
         return root
 
     def on_start(self):
+        # setup log file first
+        log_file = os.path.join(self.user_data_dir, "app.log")
+        setup_logging(log_file)
+
+        logging.info("App started.")
+
         self.config_file = os.path.join(self.user_data_dir, "config.json")
         self.sent_file = os.path.join(self.user_data_dir, "sent_titles.txt")
         self.pin_file = os.path.join(self.user_data_dir, "pin.json")
@@ -286,7 +303,6 @@ class NewsApp(App):
 
     # --------- BACK BUTTON HANDLING ---------
     def on_keyboard(self, window, key, scancode, codepoint, modifiers):
-        # Android back = 27
         if key == 27:
             return self.handle_back_button()
         return False
@@ -298,9 +314,10 @@ class NewsApp(App):
         else:
             self.last_back_press_time = now
             self.status_label.text = "Press back again to exit."
-        return True  # consume back press
+        return True
 
     def exit_app(self):
+        logging.info("Exit requested.")
         App.get_running_app().stop()
 
     # --------- PIN LOGIN ---------
@@ -309,18 +326,8 @@ class NewsApp(App):
 
         layout = BoxLayout(orientation="vertical", padding=30, spacing=15)
 
-        title = Label(
-            text="Secure Access",
-            font_size="22sp",
-            size_hint=(1, None),
-            height=40,
-        )
-
-        subtitle = Label(
-            text="Enter 4-digit PIN",
-            size_hint=(1, None),
-            height=30,
-        )
+        title = Label(text="Secure Access", font_size="22sp", size_hint=(1, None), height=40)
+        subtitle = Label(text="Enter 4-digit PIN", size_hint=(1, None), height=30)
 
         self.pin_input = TextInput(
             hint_text="4-digit PIN",
@@ -340,11 +347,7 @@ class NewsApp(App):
         )
         unlock_btn.bind(on_press=self.on_unlock_pressed)
 
-        self.login_status_label = Label(
-            text="",
-            size_hint=(1, None),
-            height=30,
-        )
+        self.login_status_label = Label(text="", size_hint=(1, None), height=30)
 
         layout.add_widget(title)
         layout.add_widget(subtitle)
@@ -355,25 +358,31 @@ class NewsApp(App):
         self.login_view.add_widget(layout)
 
     def on_unlock_pressed(self, instance):
-        pin = self.pin_input.text.strip()
+        try:
+            pin = self.pin_input.text.strip()
 
-        if len(pin) != 4 or not pin.isdigit():
-            self.login_status_label.text = "PIN must be 4 digits."
-            return
+            if len(pin) != 4 or not pin.isdigit():
+                self.login_status_label.text = "PIN must be 4 digits."
+                return
 
-        if self.stored_pin is None:
-            self.stored_pin = pin
-            self.save_pin(pin)
-            self.login_status_label.text = "PIN set."
-            self.pin_input.text = ""
-            Clock.schedule_once(lambda dt: self.login_view.dismiss(), 0.5)
-        else:
-            if pin == self.stored_pin:
-                self.login_status_label.text = "Welcome."
+            if self.stored_pin is None:
+                self.stored_pin = pin
+                self.save_pin(pin)
+                self.login_status_label.text = "PIN set."
                 self.pin_input.text = ""
-                Clock.schedule_once(lambda dt: self.login_view.dismiss(), 0.2)
+                Clock.schedule_once(lambda dt: self.login_view.dismiss(), 0.5)
+                logging.info("PIN set for first time.")
             else:
-                self.login_status_label.text = "Incorrect PIN."
+                if pin == self.stored_pin:
+                    self.login_status_label.text = "Welcome."
+                    self.pin_input.text = ""
+                    Clock.schedule_once(lambda dt: self.login_view.dismiss(), 0.2)
+                    logging.info("PIN accepted.")
+                else:
+                    self.login_status_label.text = "Incorrect PIN."
+                    logging.warning("Wrong PIN entered.")
+        except Exception:
+            log_exception("on_unlock_pressed failed")
 
     def load_pin(self):
         try:
@@ -383,6 +392,7 @@ class NewsApp(App):
         except FileNotFoundError:
             self.stored_pin = None
         except Exception:
+            log_exception("load_pin failed")
             self.stored_pin = None
 
     def save_pin(self, pin: str):
@@ -390,9 +400,9 @@ class NewsApp(App):
             with open(self.pin_file, "w", encoding="utf-8") as f:
                 json.dump({"pin": pin}, f, ensure_ascii=False, indent=2)
         except Exception:
-            pass
+            log_exception("save_pin failed")
 
-    # --------- STATS (TOTAL SENT) ---------
+    # --------- STATS ---------
     def load_stats(self):
         try:
             with open(self.stats_file, "r", encoding="utf-8") as f:
@@ -401,6 +411,7 @@ class NewsApp(App):
         except FileNotFoundError:
             self.total_sent = 0
         except Exception:
+            log_exception("load_stats failed")
             self.total_sent = 0
 
     def save_stats(self):
@@ -408,7 +419,7 @@ class NewsApp(App):
             with open(self.stats_file, "w", encoding="utf-8") as f:
                 json.dump({"total_sent": self.total_sent}, f, ensure_ascii=False, indent=2)
         except Exception:
-            pass
+            log_exception("save_stats failed")
 
     def update_total_label(self):
         def _update(dt):
@@ -421,17 +432,8 @@ class NewsApp(App):
         self.loading_view = ModalView(size_hint=(0.6, 0.25), auto_dismiss=False)
         inner = BoxLayout(orientation="vertical", padding=20, spacing=10)
 
-        label_title = Label(
-            text="Sending...",
-            font_size="18sp",
-            size_hint=(1, None),
-            height=30,
-        )
-        self.loading_label = Label(
-            text="Please wait",
-            size_hint=(1, None),
-            height=30,
-        )
+        label_title = Label(text="Sending...", font_size="18sp", size_hint=(1, None), height=30)
+        self.loading_label = Label(text="Please wait", size_hint=(1, None), height=30)
 
         inner.add_widget(label_title)
         inner.add_widget(self.loading_label)
@@ -443,7 +445,6 @@ class NewsApp(App):
             self.loading_label.text = message
             if not self.loading_view.parent:
                 self.loading_view.open()
-
         Clock.schedule_once(_show, 0)
 
     def hide_loading_and_set_status(self, status_text="Done!"):
@@ -452,20 +453,14 @@ class NewsApp(App):
                 self.loading_view.dismiss()
             self.status_label.text = status_text
             self.send_button.disabled = False
-
         Clock.schedule_once(_hide, 0)
 
-    # --------- MENU (RESET MAILS + EXIT) ---------
+    # --------- MENU ---------
     def create_menu_view(self):
         self.menu_view = ModalView(size_hint=(0.6, 0.5), auto_dismiss=True)
         layout = BoxLayout(orientation="vertical", padding=20, spacing=10)
 
-        title = Label(
-            text="Menu",
-            font_size="18sp",
-            size_hint=(1, None),
-            height=30,
-        )
+        title = Label(text="Menu", font_size="18sp", size_hint=(1, None), height=30)
 
         reset_btn = Button(
             text="Reset mails",
@@ -513,8 +508,10 @@ class NewsApp(App):
             self.save_stats()
             self.update_total_label()
             self.status_label.text = "Mail history reset. Total emails sent: 0."
-        except Exception as e:
-            self.status_label.text = f"Error resetting mails: {e}"
+            logging.info("Mail history reset.")
+        except Exception:
+            log_exception("on_reset_mails_pressed failed")
+            self.status_label.text = "Error resetting mails."
         finally:
             self.menu_view.dismiss()
 
@@ -522,17 +519,12 @@ class NewsApp(App):
         self.menu_view.dismiss()
         self.exit_app()
 
-    # --------- SENDER MODAL (ADD / EDIT) ---------
+    # --------- SENDER MODAL ---------
     def create_sender_modal(self):
         self.sender_modal = ModalView(size_hint=(0.9, 0.5), auto_dismiss=True)
         layout = BoxLayout(orientation="vertical", padding=20, spacing=10)
 
-        self.sender_modal_title = Label(
-            text="Add sender email",
-            font_size="18sp",
-            size_hint=(1, None),
-            height=30,
-        )
+        self.sender_modal_title = Label(text="Add sender email", font_size="18sp", size_hint=(1, None), height=30)
 
         self.sender_email_input = TextInput(
             hint_text="Sender email (Gmail)",
@@ -551,20 +543,10 @@ class NewsApp(App):
 
         btn_row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=45, spacing=10)
 
-        save_btn = Button(
-            text="Save",
-            size_hint=(0.5, 1),
-            background_normal="",
-            background_color=(0.1, 0.6, 0.5, 1),
-        )
+        save_btn = Button(text="Save", size_hint=(0.5, 1), background_normal="", background_color=(0.1, 0.6, 0.5, 1))
         save_btn.bind(on_press=self.on_sender_save)
 
-        cancel_btn = Button(
-            text="Cancel",
-            size_hint=(0.5, 1),
-            background_normal="",
-            background_color=(0.6, 0.6, 0.6, 1),
-        )
+        cancel_btn = Button(text="Cancel", size_hint=(0.5, 1), background_normal="", background_color=(0.6, 0.6, 0.6, 1))
         cancel_btn.bind(on_press=lambda instance: self.sender_modal.dismiss())
 
         btn_row.add_widget(save_btn)
@@ -601,6 +583,7 @@ class NewsApp(App):
         self.update_senders_ui()
         self.status_label.text = "Sender deleted."
         self.save_config()
+        logging.info("Sender deleted index=%s", index)
 
     def on_sender_save(self, instance):
         email = self.sender_email_input.text.strip()
@@ -613,9 +596,11 @@ class NewsApp(App):
         if self.editing_sender_index is None:
             self.senders.append({"email": email, "password": password})
             self.status_label.text = "Sender added."
+            logging.info("Sender added: %s", email)
         else:
             self.senders[self.editing_sender_index] = {"email": email, "password": password}
             self.status_label.text = "Sender updated."
+            logging.info("Sender updated: %s", email)
 
         self.sender_modal.dismiss()
         self.update_senders_ui()
@@ -628,23 +613,10 @@ class NewsApp(App):
         for idx, sender in enumerate(self.senders):
             row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=40, spacing=5)
 
-            email_label = Label(
-                text=sender["email"],
-                size_hint=(0.6, 1),
-            )
+            email_label = Label(text=sender["email"], size_hint=(0.6, 1))
 
-            edit_btn = Button(
-                text="Edit",
-                size_hint=(0.2, 1),
-                background_normal="",
-                background_color=(0.1, 0.6, 0.5, 1),
-            )
-            delete_btn = Button(
-                text="Delete",
-                size_hint=(0.2, 1),
-                background_normal="",
-                background_color=(0.8, 0.3, 0.3, 1),
-            )
+            edit_btn = Button(text="Edit", size_hint=(0.2, 1), background_normal="", background_color=(0.1, 0.6, 0.5, 1))
+            delete_btn = Button(text="Delete", size_hint=(0.2, 1), background_normal="", background_color=(0.8, 0.3, 0.3, 1))
 
             edit_btn.bind(on_press=lambda inst, i=idx: self.on_sender_edit(i))
             delete_btn.bind(on_press=lambda inst, i=idx: self.on_sender_delete(i))
@@ -659,19 +631,9 @@ class NewsApp(App):
     def on_add_recipient(self, instance=None, initial_value=""):
         row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=40, spacing=5)
 
-        inp = TextInput(
-            text=initial_value,
-            hint_text="Recipient email",
-            multiline=False,
-        )
+        inp = TextInput(text=initial_value, hint_text="Recipient email", multiline=False)
 
-        btn = Button(
-            text="X",
-            size_hint=(None, 1),
-            width=50,
-            background_normal="",
-            background_color=(0.8, 0.3, 0.3, 1),
-        )
+        btn = Button(text="X", size_hint=(None, 1), width=50, background_normal="", background_color=(0.8, 0.3, 0.3, 1))
 
         def remove_row(btn_instance):
             if row in self.recipients_layout.children:
@@ -690,7 +652,7 @@ class NewsApp(App):
     def get_recipients_from_ui(self):
         return [inp.text.strip() for inp in self.recipient_inputs if inp.text.strip()]
 
-    # --------- CONFIG (SAVE / LOAD) ---------
+    # --------- CONFIG ---------
     def get_config_from_ui(self):
         max_emails_text = self.max_emails_input.text.strip()
         if max_emails_text == "":
@@ -705,11 +667,7 @@ class NewsApp(App):
 
         recipients = self.get_recipients_from_ui()
 
-        return {
-            "senders": self.senders,
-            "recipients": recipients,
-            "max_emails": max_emails,
-        }
+        return {"senders": self.senders, "recipients": recipients, "max_emails": max_emails}
 
     def apply_config_to_ui(self, config):
         self.senders = config.get("senders", [])
@@ -743,8 +701,10 @@ class NewsApp(App):
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, ensure_ascii=False, indent=2)
             self.status_label.text = "Settings saved."
-        except Exception as e:
-            self.status_label.text = f"Error saving settings: {e}"
+            logging.info("Settings saved.")
+        except Exception:
+            log_exception("save_config failed")
+            self.status_label.text = "Error saving settings."
 
     def load_config(self):
         if not self.config_file or not os.path.exists(self.config_file):
@@ -756,8 +716,10 @@ class NewsApp(App):
                 cfg = json.load(f)
             self.apply_config_to_ui(cfg)
             self.status_label.text = "Settings loaded."
-        except Exception as e:
-            self.status_label.text = f"Error loading settings: {e}"
+            logging.info("Settings loaded.")
+        except Exception:
+            log_exception("load_config failed")
+            self.status_label.text = "Error loading settings."
             self.on_add_recipient()
 
     # --------- SEND FLOW ---------
@@ -817,7 +779,6 @@ class NewsApp(App):
             to_send = new_items[:max_emails]
             self._log_thread_safe(f"Sending {len(to_send)} items from {len(senders)} senders...")
 
-            # For counter: each sender sends len(to_send) emails
             emails_this_round = len(senders) * len(to_send)
 
             for sender in senders:
@@ -835,21 +796,20 @@ class NewsApp(App):
             titles_just_sent = [t for (t, _) in to_send]
             append_sent_titles(self.sent_file, titles_just_sent)
 
-            # Update total sent counter
             self.total_sent += emails_this_round
             self.save_stats()
             self.update_total_label()
 
-            self.hide_loading_and_set_status(
-                f"Done! Total emails sent: {self.total_sent}"
-            )
-        except Exception as e:
-            self.hide_loading_and_set_status(f"Error: {e}")
+            self.hide_loading_and_set_status(f"Done! Total emails sent: {self.total_sent}")
+            logging.info("Send flow finished OK.")
+
+        except Exception:
+            log_exception("send_news_flow crashed")
+            self.hide_loading_and_set_status("Error. Check app.log.")
 
     def _log_thread_safe(self, text: str):
         def _update(dt):
             self.status_label.text = text
-
         Clock.schedule_once(_update, 0)
 
 
