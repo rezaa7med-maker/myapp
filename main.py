@@ -479,3 +479,173 @@ class NewsApp(App):
 
         if not email or not password:
             self.status_label.text = "Sender email and App Password are required."
+            return
+
+        self.senders.append({"email": email, "password": password})
+        self.status_label.text = "Sender added."
+
+        self.sender_modal.dismiss()
+        self.update_senders_ui()
+        self.save_config()
+
+    def update_senders_ui(self):
+        self.senders_layout.clear_widgets()
+        for sender in self.senders:
+            self.senders_layout.add_widget(Label(text=sender["email"], size_hint=(1, None), height=30))
+
+    def on_add_recipient(self, instance=None, initial_value=""):
+        row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=40, spacing=5)
+
+        inp = TextInput(text=initial_value, hint_text="Recipient email", multiline=False)
+
+        row.add_widget(inp)
+        self.recipients_layout.add_widget(row)
+        self.recipient_inputs.append(inp)
+
+    def get_recipients_from_ui(self):
+        return [inp.text.strip() for inp in self.recipient_inputs if inp.text.strip()]
+
+    def get_config_from_ui(self):
+        max_emails_text = self.max_emails_input.text.strip()
+        if max_emails_text == "":
+            max_emails = 2
+        else:
+            try:
+                max_emails = int(max_emails_text)
+                if max_emails <= 0:
+                    max_emails = 1
+            except ValueError:
+                max_emails = 2
+
+        recipients = self.get_recipients_from_ui()
+
+        return {"senders": self.senders, "recipients": recipients, "max_emails": max_emails}
+
+    def apply_config_to_ui(self, config):
+        self.senders = config.get("senders", [])
+        self.update_senders_ui()
+
+        max_emails = config.get("max_emails", 2)
+        self.max_emails_input.text = str(max_emails)
+
+        self.recipients_layout.clear_widgets()
+        self.recipient_inputs.clear()
+
+        recipients = config.get("recipients", [])
+        if not recipients:
+            self.on_add_recipient()
+        else:
+            for r in recipients:
+                self.on_add_recipient(initial_value=r)
+
+    def save_config(self):
+        cfg = self.get_config_from_ui()
+
+        if not cfg["senders"]:
+            self.status_label.text = "At least one sender is required."
+            return
+        if not cfg["recipients"]:
+            self.status_label.text = "At least one recipient is required."
+            return
+
+        try:
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            self.status_label.text = "Settings saved."
+        except Exception as e:
+            self.status_label.text = f"Error saving settings: {e}"
+
+    def load_config(self):
+        if not self.config_file or not os.path.exists(self.config_file):
+            self.on_add_recipient()
+            return
+
+        try:
+            with open(self.config_file, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            self.apply_config_to_ui(cfg)
+            self.status_label.text = "Settings loaded."
+        except Exception as e:
+            self.status_label.text = f"Error loading settings: {e}"
+            self.on_add_recipient()
+
+    def on_save_pressed(self, instance):
+        self.save_config()
+
+    def on_send_pressed(self, instance):
+        if not self.senders:
+            self.status_label.text = "At least one sender is required."
+            return
+
+        recipients = self.get_recipients_from_ui()
+        if not recipients:
+            self.status_label.text = "At least one recipient is required."
+            return
+
+        self.save_config()
+
+        self.send_button.disabled = True
+        self.status_label.text = "Starting to send..."
+        self.show_loading("Sending...")
+
+        t = threading.Thread(target=self.send_news_flow, daemon=True)
+        t.start()
+
+    def send_news_flow(self):
+        try:
+            cfg = self.get_config_from_ui()
+            senders = cfg["senders"]
+            recipients = cfg["recipients"]
+            max_emails = cfg["max_emails"]
+
+            sent_titles = load_sent_titles(self.sent_file)
+            self._log_thread_safe(f"Previously sent: {len(sent_titles)}")
+
+            all_items = collect_news()
+            self._log_thread_safe(f"Total collected: {len(all_items)}")
+
+            new_items = [(t, s) for (t, s) in all_items if t not in sent_titles]
+            self._log_thread_safe(f"New items: {len(new_items)}")
+
+            if not new_items:
+                self.hide_loading_and_set_status("No new items to send.")
+                return
+
+            to_send = new_items[:max_emails]
+            self._log_thread_safe(f"Sending {len(to_send)} items from {len(senders)} senders...")
+
+            emails_this_round = len(senders) * len(to_send)
+
+            for sender in senders:
+                sender_email = sender["email"]
+                app_password = sender["password"]
+                self._log_thread_safe(f"Sending from {sender_email}...")
+
+                send_emails(
+                    sender_email,
+                    app_password,
+                    recipients,
+                    to_send,
+                    log_func=self._log_thread_safe,
+                )
+
+            titles_just_sent = [t for (t, _) in to_send]
+            append_sent_titles(self.sent_file, titles_just_sent)
+
+            self.total_sent += emails_this_round
+            self.save_stats()
+            self.update_total_label()
+
+            self.hide_loading_and_set_status(f"Done! Total emails sent: {self.total_sent}")
+
+        except Exception as e:
+            self.hide_loading_and_set_status(f"Error: {e}")
+
+    def _log_thread_safe(self, text: str):
+        def _update(dt):
+            self.status_label.text = text
+        Clock.schedule_once(_update, 0)
+
+
+if __name__ == "__main__":
+    NewsApp().run()
