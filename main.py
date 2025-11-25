@@ -1,26 +1,86 @@
+import requests
+import feedparser
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
+from kivy.clock import Clock
 from kivy.core.window import Window
 
+
+# --------- CONSTANT DATA ---------
+RSS_FEEDS = [
+    "https://parsi.euronews.com/index.php/rss?level=program&name=world",
+    "https://www.mehrnews.com/index.php?module=persian&func=rss&service_id=1",
+    "https://www.tabnak.ir/fa/rss/allnews",
+]
+
+REQUEST_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Android) KivyApp/1.0"
+}
+
+
+# --------- RSS SAFE FETCH ---------
+def collect_news_safe(log_func=print):
+    items = []
+
+    for url in RSS_FEEDS:
+        try:
+            r = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
+            r.raise_for_status()
+
+            # parse downloaded text (safer on Android)
+            feed = feedparser.parse(r.text)
+
+            entries = getattr(feed, "entries", []) or []
+            for entry in entries:
+                title = getattr(entry, "title", "").strip()
+                summary = getattr(entry, "summary", "").strip() or title
+                if title:
+                    items.append((title, summary))
+
+        except Exception as e:
+            log_func(f"RSS error for {url}: {e}")
+            continue
+
+    return items
+
+
+# --------- MAIN APP ---------
 class NewsApp(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
 
-        root = BoxLayout(orientation="vertical", padding=16, spacing=10)
+        root = BoxLayout(orientation="vertical", padding=20, spacing=10)
 
-        root.add_widget(Label(text="Top bar OK"))
-        root.add_widget(Button(text="Add sender email"))
-        root.add_widget(Button(text="Add recipient"))
-        root.add_widget(TextInput(hint_text="Max emails", multiline=False))
-        root.add_widget(Button(text="Save"))
-        root.add_widget(Button(text="Send"))
-        root.add_widget(Label(text="Total emails sent: 0"))
-        root.add_widget(Label(text="Status OK"))
+        self.title_label = Label(
+            text="UI OK",
+            font_size="22sp",
+            size_hint=(1, 0.6),
+        )
+
+        self.status_label = Label(
+            text="Waiting...",
+            font_size="18sp",
+            size_hint=(1, 0.4),
+        )
+
+        root.add_widget(self.title_label)
+        root.add_widget(self.status_label)
 
         return root
+
+    def on_start(self):
+        # after 1 second, test RSS
+        Clock.schedule_once(self.test_rss, 1)
+
+    def test_rss(self, dt):
+        def log(msg):
+            self.status_label.text = msg
+
+        news = collect_news_safe(log_func=log)
+        log(f"RSS OK, items: {len(news)}")
+
 
 if __name__ == "__main__":
     NewsApp().run()
