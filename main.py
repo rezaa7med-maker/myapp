@@ -1,5 +1,4 @@
 import os
-import json
 import threading
 import ssl
 import smtplib
@@ -8,11 +7,13 @@ import traceback
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
 from kivy.core.window import Window
+
 
 # ---------------- CONSTANTS ----------------
 RSS_FEEDS = [
@@ -26,7 +27,7 @@ REQUEST_HEADERS = {
 }
 
 SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT_STARTTLS = 587   # SAFE PORT
+SMTP_PORT_STARTTLS = 587
 SMTP_TIMEOUT = 15
 SMTP_RETRIES = 2
 
@@ -53,11 +54,29 @@ def collect_news_safe(log_func=print):
 
     for url in RSS_FEEDS:
         try:
-            r = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
-            r.raise_for_status()
-            feed = feedparser.parse(r.text)
+            log_func(f"Fetching: {url}")
+
+            r = requests.get(
+                url,
+                headers=REQUEST_HEADERS,
+                timeout=12,
+                allow_redirects=True
+            )
+
+            log_func(f"Status {r.status_code} | bytes={len(r.content)}")
+
+            if r.status_code != 200:
+                continue
+
+            feed = feedparser.parse(r.content)
+
+            if getattr(feed, "bozo", False):
+                be = getattr(feed, "bozo_exception", None)
+                log_func(f"Parse warning: {be}")
 
             entries = getattr(feed, "entries", []) or []
+            log_func(f"Items in this feed: {len(entries)}")
+
             for entry in entries:
                 title = getattr(entry, "title", "").strip()
                 summary = getattr(entry, "summary", "").strip() or title
@@ -72,17 +91,12 @@ def collect_news_safe(log_func=print):
 
 
 def send_emails_starttls(sender_email, app_password, to_emails, news_items, log_func=print):
-    """
-    Gmail-safe SMTP using STARTTLS on 587.
-    More stable than SMTP_SSL in Iran/VPN networks.
-    """
     context = ssl.create_default_context()
     last_err = None
 
     for attempt in range(SMTP_RETRIES + 1):
         try:
             log_func(f"SMTP connect... (try {attempt+1})")
-
             server = smtplib.SMTP(SMTP_HOST, SMTP_PORT_STARTTLS, timeout=SMTP_TIMEOUT)
             server.ehlo()
             server.starttls(context=context)
@@ -108,11 +122,10 @@ def send_emails_starttls(sender_email, app_password, to_emails, news_items, log_
                     to_emails,
                     message.encode("utf-8"),
                 )
-
                 log_func(f"Sent: {subject}")
 
             server.quit()
-            return  # success
+            return
 
         except Exception as e:
             last_err = e
@@ -123,33 +136,38 @@ def send_emails_starttls(sender_email, app_password, to_emails, news_items, log_
                 pass
             time.sleep(1.5)
 
-    # if all retries failed
     raise last_err
 
 
 # ---------------- APP ----------------
 class NewsApp(App):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.last_back_press_time = 0.0
-
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
 
-        root = BoxLayout(orientation="vertical", padding=18, spacing=10)
+        # Scroll root so UI never squishes
+        scroll = ScrollView(size_hint=(1, 1))
+        root = BoxLayout(
+            orientation="vertical",
+            padding=20,
+            spacing=12,
+            size_hint_y=None
+        )
+        root.bind(minimum_height=root.setter("height"))
+        scroll.add_widget(root)
 
         self.title_label = Label(
             text="News Mailer (Safe Boot)",
-            font_size="20sp",
+            font_size="22sp",
             size_hint=(1, None),
-            height=40,
+            height=60,
         )
 
         self.sender_input = TextInput(
             hint_text="Sender Gmail",
             multiline=False,
             size_hint=(1, None),
-            height=40,
+            height=55,
+            font_size="18sp",
         )
 
         self.pass_input = TextInput(
@@ -157,14 +175,16 @@ class NewsApp(App):
             password=True,
             multiline=False,
             size_hint=(1, None),
-            height=40,
+            height=55,
+            font_size="18sp",
         )
 
         self.recipient_input = TextInput(
             hint_text="Recipient email",
             multiline=False,
             size_hint=(1, None),
-            height=40,
+            height=55,
+            font_size="18sp",
         )
 
         self.max_input = TextInput(
@@ -172,56 +192,70 @@ class NewsApp(App):
             input_filter="int",
             multiline=False,
             size_hint=(1, None),
-            height=40,
+            height=55,
+            font_size="18sp",
         )
 
-        btn_row = BoxLayout(orientation="vertical", spacing=8, size_hint=(1, None), height=120)
-
-        self.test_btn = Button(text="Test RSS", size_hint=(1, None), height=50)
-        self.send_btn = Button(text="Send", size_hint=(1, None), height=50)
+        self.test_btn = Button(
+            text="Test RSS",
+            size_hint=(1, None),
+            height=65,
+            font_size="20sp",
+        )
+        self.send_btn = Button(
+            text="Send",
+            size_hint=(1, None),
+            height=65,
+            font_size="20sp",
+        )
 
         self.test_btn.bind(on_press=self.on_test_rss)
         self.send_btn.bind(on_press=self.on_send)
 
-        btn_row.add_widget(self.test_btn)
-        btn_row.add_widget(self.send_btn)
-
         self.status_label = Label(
             text="Ready.",
             font_size="16sp",
-            size_hint=(1, 1),
+            size_hint=(1, None),
+            height=400,
+            halign="left",
+            valign="top",
         )
+        self.status_label.bind(size=lambda inst, val: inst.setter("text_size")(inst, val))
 
         root.add_widget(self.title_label)
         root.add_widget(self.sender_input)
         root.add_widget(self.pass_input)
         root.add_widget(self.recipient_input)
         root.add_widget(self.max_input)
-        root.add_widget(btn_row)
+        root.add_widget(self.test_btn)
+        root.add_widget(self.send_btn)
         root.add_widget(self.status_label)
 
-        return root
+        return scroll
 
-    # ---------- UI LOG ----------
     def log(self, msg):
         def _u(dt):
-            self.status_label.text = msg
+            self.status_label.text += ("\n" + msg)
         Clock.schedule_once(_u, 0)
 
-    # ---------- RSS TEST ----------
+    def clear_log(self):
+        def _c(dt):
+            self.status_label.text = ""
+        Clock.schedule_once(_c, 0)
+
     def on_test_rss(self, instance):
-        self.log("Testing RSS...")
+        self.clear_log()
+        self.log("Testing RSS ...")
         t = threading.Thread(target=self._test_rss_bg, daemon=True)
         t.start()
 
     def _test_rss_bg(self):
         try:
             news = collect_news_safe(log_func=self.log)
-            self.log(f"RSS OK, items: {len(news)}")
+            self.log(f"TOTAL items collected: {len(news)}")
         except Exception as e:
             self.log(f"RSS ERROR: {e}")
 
-    # ---------- SEND ----------
     def on_send(self, instance):
         sender = self.sender_input.text.strip()
         app_pass = self.pass_input.text.strip()
@@ -280,14 +314,4 @@ class NewsApp(App):
 
 
 if __name__ == "__main__":
-    try:
-        NewsApp().run()
-    except Exception:
-        tb = traceback.format_exc()
-        try:
-            os.makedirs("/sdcard", exist_ok=True)
-            with open("/sdcard/crash.txt", "w", encoding="utf-8") as f:
-                f.write(tb)
-        except Exception:
-            pass
-        raise
+    NewsApp().run()
