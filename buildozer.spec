@@ -7,7 +7,7 @@ source.include_exts = py,png,jpg,kv,atlas
 version = 0.1
 
 # only what we need for step 5:
-requirements = python3,kivy==2.3.0,requests,feedparser,certifi
+requirements = python3,kivy==2.3.0,requests,feedparser,urllib3,openssl,certifi
 
 orientation = portrait
 
