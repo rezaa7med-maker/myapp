@@ -1,6 +1,4 @@
 import threading
-import requests
-import feedparser
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -9,7 +7,6 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 
 
-# --------- CONSTANT DATA ---------
 RSS_FEEDS = [
     "https://parsi.euronews.com/index.php/rss?level=program&name=world",
     "https://www.mehrnews.com/index.php?module=persian&func=rss&service_id=1",
@@ -21,20 +18,17 @@ REQUEST_HEADERS = {
 }
 
 
-# --------- RSS SAFE FETCH ---------
 def collect_news_safe(log_func=print):
+    import requests
+    import feedparser
+
     items = []
 
     for url in RSS_FEEDS:
         try:
             r = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
             r.raise_for_status()
-
-            # Use bytes to avoid encoding issues on Android
             feed = feedparser.parse(r.content)
-
-            if getattr(feed, "bozo", False):
-                log_func(f"RSS parse warning for {url}: {getattr(feed, 'bozo_exception', None)}")
 
             entries = getattr(feed, "entries", []) or []
             for entry in entries:
@@ -50,7 +44,6 @@ def collect_news_safe(log_func=print):
     return items
 
 
-# --------- MAIN APP ---------
 class NewsApp(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
@@ -71,11 +64,9 @@ class NewsApp(App):
 
         root.add_widget(self.title_label)
         root.add_widget(self.status_label)
-
         return root
 
     def on_start(self):
-        # after 1 second, test RSS in background thread
         Clock.schedule_once(lambda dt: self.start_rss_thread(), 1)
 
     def start_rss_thread(self):
