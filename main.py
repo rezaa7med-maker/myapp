@@ -1,3 +1,10 @@
+import base64
+
+# Compatibility patch for Python 3.10+
+if not hasattr(base64, "decodestring"):
+    base64.decodestring = base64.decodebytes
+
+
 import os
 import sys
 import traceback
@@ -40,6 +47,8 @@ class NewsApp(App):
 
             url = "https://www.tabnak.ir/fa/rss/allnews"
             r = requests.get(url, timeout=8)
+            r.raise_for_status()
+
             feed = feedparser.parse(r.text)
             count = len(getattr(feed, "entries", []) or [])
 
