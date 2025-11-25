@@ -1,4 +1,6 @@
 import threading
+import requests
+import feedparser
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -7,6 +9,7 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 
 
+# --------- CONSTANT DATA ---------
 RSS_FEEDS = [
     "https://parsi.euronews.com/index.php/rss?level=program&name=world",
     "https://www.mehrnews.com/index.php?module=persian&func=rss&service_id=1",
@@ -18,24 +21,28 @@ REQUEST_HEADERS = {
 }
 
 
+# --------- RSS SAFE FETCH ---------
 def collect_news_safe(log_func=print):
-    import requests
-    import feedparser
-
     items = []
 
     for url in RSS_FEEDS:
         try:
-            r = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
-            r.raise_for_status()
-            feed = feedparser.parse(r.content)
+            log_func(f"Fetching: {url}")
 
+            # timeout as (connect, read) to avoid hanging
+            r = requests.get(url, headers=REQUEST_HEADERS, timeout=(5, 10))
+            r.raise_for_status()
+
+            feed = feedparser.parse(r.text)
             entries = getattr(feed, "entries", []) or []
+
             for entry in entries:
                 title = getattr(entry, "title", "").strip()
                 summary = getattr(entry, "summary", "").strip() or title
                 if title:
                     items.append((title, summary))
+
+            log_func(f"OK: {url} => {len(entries)} items")
 
         except Exception as e:
             log_func(f"RSS error for {url}: {e}")
@@ -44,6 +51,7 @@ def collect_news_safe(log_func=print):
     return items
 
 
+# --------- MAIN APP ---------
 class NewsApp(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
@@ -64,24 +72,24 @@ class NewsApp(App):
 
         root.add_widget(self.title_label)
         root.add_widget(self.status_label)
+
         return root
 
     def on_start(self):
-        Clock.schedule_once(lambda dt: self.start_rss_thread(), 1)
-
-    def start_rss_thread(self):
-        t = threading.Thread(target=self.test_rss_worker, daemon=True)
+        # start RSS test in background thread
+        self.status_label.text = "Starting RSS test..."
+        t = threading.Thread(target=self.test_rss_thread, daemon=True)
         t.start()
 
-    def test_rss_worker(self):
-        def log(msg):
-            Clock.schedule_once(lambda dt: self.set_status(msg), 0)
+    def log_thread_safe(self, msg):
+        Clock.schedule_once(lambda dt: setattr(self.status_label, "text", msg), 0)
 
-        news = collect_news_safe(log_func=log)
-        log(f"RSS OK, items: {len(news)}")
-
-    def set_status(self, msg):
-        self.status_label.text = msg
+    def test_rss_thread(self):
+        try:
+            news = collect_news_safe(log_func=self.log_thread_safe)
+            self.log_thread_safe(f"RSS DONE, total items: {len(news)}")
+        except Exception as e:
+            self.log_thread_safe(f"THREAD ERROR: {e}")
 
 
 if __name__ == "__main__":
