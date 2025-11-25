@@ -1,11 +1,7 @@
 import os
 import json
 import threading
-import ssl
-import smtplib
 import time
-
-import feedparser
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -55,6 +51,8 @@ def append_sent_titles(filename: str, titles: list) -> None:
 
 
 def collect_news(log_func=print) -> list:
+    import feedparser
+
     all_items = []
 
     for url in RSS_FEEDS:
@@ -64,7 +62,6 @@ def collect_news(log_func=print) -> list:
             log_func(f"RSS error for {url}: {e}")
             continue
 
-        # feedparser sometimes sets bozo_exception on parse problems
         if getattr(feed, "bozo", False):
             be = getattr(feed, "bozo_exception", None)
             log_func(f"RSS parse warning for {url}: {be}")
@@ -92,6 +89,9 @@ def collect_news(log_func=print) -> list:
 
 
 def send_emails(sender_email, app_password, to_emails, news_items, log_func=print) -> None:
+    import ssl
+    import smtplib
+
     context = ssl.create_default_context()
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
