@@ -1,12 +1,15 @@
+import os
+import certifi
 import feedparser
 from kivy.app import App
 from kivy.uix.label import Label
 
-RSS_URL = "http://feeds.bbci.co.uk/persian/rss.xml"
+RSS_URL = "https://www.tabnak.ir/fa/rss/allnews"
 
 class MyApp(App):
     def build(self):
         try:
+            os.environ["SSL_CERT_FILE"] = certifi.where()
             feed = feedparser.parse(RSS_URL)
             title = feed.entries[0].title if feed.entries else "No entries"
             return Label(text=title)
