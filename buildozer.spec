@@ -5,8 +5,7 @@ package.domain = org.test
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 version = 0.1
-requirements = python3,kivy==2.3.0,feedparser,openssl,certifi
-orientation = portrait
+requirements = python3,kivy==2.3.0,requests,urllib3,openssl,certifi
 android.permissions = INTERNET, ACCESS_NETWORK_STATE
 android.api = 33
 android.minapi = 21
