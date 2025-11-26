@@ -27,7 +27,42 @@ from kivy.utils import get_color_from_hex
 
 
 # ------------------------------------------------------------
-# Fix for libraries that still call base64.decodestring/encodestring
+# Safe crash logger (very important on Android)
+# ------------------------------------------------------------
+def write_crash(app_dir, text):
+    try:
+        os.makedirs(app_dir, exist_ok=True)
+        path = os.path.join(app_dir, "crash.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    except Exception:
+        pass
+
+
+def safe_call(app, where, func, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        tb = traceback.format_exc()
+        try:
+            app_dir = app.user_data_dir
+        except Exception:
+            app_dir = "/sdcard"
+        write_crash(app_dir, f"[{where}]\n{tb}")
+
+        # show on UI if possible
+        try:
+            if hasattr(app, "show_info"):
+                Clock.schedule_once(
+                    lambda *_: app.show_info("CRASH", f"{where}\n\n{e}\n\n{tb}"), 0
+                )
+        except Exception:
+            pass
+        raise
+
+
+# ------------------------------------------------------------
+# Fix for base64 old calls
 # ------------------------------------------------------------
 if not hasattr(base64, "decodestring"):
     base64.decodestring = base64.decodebytes
@@ -285,6 +320,10 @@ class NewsMailerApp(App):
         self.sending_close_btn = None
 
     def build(self):
+        # wrap everything build does
+        return safe_call(self, "build()", self._build_impl)
+
+    def _build_impl(self):
         self.title = APP_TITLE
         Window.clearcolor = get_color_from_hex("#0F1115")
 
@@ -407,7 +446,6 @@ class NewsMailerApp(App):
         self.refresh_lists()
         self.refresh_counters_async()
 
-        # --------- FIX کرش: ست کردن self.root ---------
         self.root = root
         return root
 
@@ -419,6 +457,9 @@ class NewsMailerApp(App):
 
     # ---------------- Menu / Reset / Exit ----------------
     def open_menu(self, *_):
+        safe_call(self, "open_menu()", self._open_menu_impl)
+
+    def _open_menu_impl(self):
         dropdown = DropDown()
         reset_btn = Button(text="Reset Sent Log", size_hint_y=None, height=dp(44))
         exit_btn = Button(text="Exit", size_hint_y=None, height=dp(44))
@@ -428,8 +469,6 @@ class NewsMailerApp(App):
 
         dropdown.add_widget(reset_btn)
         dropdown.add_widget(exit_btn)
-
-        # --------- FIX کرش: امن‌ترین حالت open ---------
         dropdown.open(self.root)
 
     def confirm_reset(self):
@@ -683,7 +722,7 @@ class NewsMailerApp(App):
         close_btn = Button(text="Close", size_hint_y=None, height=dp(44))
         content.add_widget(close_btn)
 
-        popup = Popup(title=title, content=content, size_hint=(0.85, None), height=dp(190))
+        popup = Popup(title=title, content=content, size_hint=(0.85, None), height=dp(210))
         close_btn.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
 
@@ -716,7 +755,7 @@ class NewsMailerApp(App):
                 msg = f"RSS OK\nTotal entries: {total}\nCollected items: {len(items)}"
             except Exception as e:
                 msg = f"RSS Error:\n{e}\n\n{traceback.format_exc()}"
-            self.show_info("RSS Test", msg)
+            Clock.schedule_once(lambda *_: self.show_info("RSS Test", msg), 0)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -849,4 +888,14 @@ class NewsMailerApp(App):
 
 
 if __name__ == "__main__":
-    NewsMailerApp().run()
+    try:
+        NewsMailerApp().run()
+    except Exception:
+        tb = traceback.format_exc()
+        try:
+            os.makedirs("/sdcard", exist_ok=True)
+            with open("/sdcard/crash.txt", "w", encoding="utf-8") as f:
+                f.write(tb)
+        except Exception:
+            pass
+        raise
