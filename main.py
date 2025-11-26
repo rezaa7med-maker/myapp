@@ -14,16 +14,29 @@ from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
 from kivy.core.window import Window
+from kivy.core.text import LabelBase
 
 
 # -------------------------------------------------------------------
 # Fix for libraries that still call base64.decodestring/encodestring
-# (these were removed in newer Python versions)
 # -------------------------------------------------------------------
 if not hasattr(base64, "decodestring"):
     base64.decodestring = base64.decodebytes
 if not hasattr(base64, "encodestring"):
     base64.encodestring = base64.encodebytes
+
+
+# -------------------------------------------------------------------
+# Persian font setup (IMPORTANT)
+# put font file here: ./fonts/Vazirmatn-Regular.ttf
+# -------------------------------------------------------------------
+FONT_NAME = "Vazir"
+FONT_PATH = os.path.join("fonts", "Vazirmatn-Regular.ttf")
+try:
+    LabelBase.register(name=FONT_NAME, fn_regular=FONT_PATH)
+except Exception:
+    # if font missing, app still runs but Persian will be squares
+    FONT_NAME = None
 
 
 # -------------------------------------------------------------------
@@ -44,12 +57,11 @@ REQUEST_HEADERS = {
 # HELPERS
 # -------------------------------------------------------------------
 def collect_news_safe(log_func=print):
-    # imports inside function to avoid early crash
     import requests
     import feedparser
 
     items = []
-    total = 0
+    total_entries = 0
 
     for url in RSS_FEEDS:
         try:
@@ -58,7 +70,7 @@ def collect_news_safe(log_func=print):
 
             feed = feedparser.parse(r.text)
             entries = getattr(feed, "entries", []) or []
-            total += len(entries)
+            total_entries += len(entries)
 
             for e in entries:
                 title = getattr(e, "title", "").strip()
@@ -69,17 +81,12 @@ def collect_news_safe(log_func=print):
         except Exception as e:
             log_func(f"RSS error for {url}: {e}")
 
-    return items, total
+    return items, total_entries
 
 
 def send_emails_safe(sender_email, app_password, to_emails, news_items):
-    """
-    Tries verified SSL first. If android lacks CA store and fails,
-    retries with unverified context (so app works).
-    """
     last_err = None
 
-    # try verified context
     for verified in (True, False):
         try:
             if verified:
@@ -91,14 +98,11 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
                 server.login(sender_email, app_password)
 
                 for title, summary in news_items:
-                    subject = title
-                    body = summary
-
                     msg = "\n".join([
                         f"To: {', '.join(to_emails)}",
-                        f"Subject: {subject}",
+                        f"Subject: {title}",
                         "",
-                        body,
+                        summary,
                     ])
 
                     server.sendmail(
@@ -113,7 +117,6 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
 
         except Exception as e:
             last_err = e
-            # اگر خطا مربوط به SSL بود، یک بار بدون verify امتحان کن
             if verified and "CERTIFICATE_VERIFY_FAILED" in str(e):
                 continue
             break
@@ -136,11 +139,11 @@ class NewsApp(App):
             text="News Mailer (Safe Boot)",
             font_size="22sp",
             size_hint=(1, None),
-            height=50
+            height=50,
+            font_name=FONT_NAME if FONT_NAME else None
         )
         root.add_widget(title)
 
-        # Scrollable content so inputs don't stick to top on small screens
         scroll = ScrollView(size_hint=(1, 1))
         content = BoxLayout(
             orientation="vertical",
@@ -159,9 +162,10 @@ class NewsApp(App):
                 password=password,
                 size_hint=(1, None),
                 height=52,
-                font_size="18sp"
+                font_size="18sp",
+                font_name=FONT_NAME if FONT_NAME else None
             )
-            ti.bind(text=lambda *_: self.save_config())  # ذخیره خودکار
+            ti.bind(text=lambda *_: self.save_config())
             return ti
 
         self.sender_input = make_input("Sender Gmail")
@@ -174,16 +178,14 @@ class NewsApp(App):
         content.add_widget(self.recipient_input)
         content.add_widget(self.max_emails_input)
 
-        # Buttons row
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
             height=60,
             spacing=10
         )
-        self.test_btn = Button(text="Test RSS")
-        self.send_btn = Button(text="Send")
-
+        self.test_btn = Button(text="Test RSS", font_name=FONT_NAME if FONT_NAME else None)
+        self.send_btn = Button(text="Send", font_name=FONT_NAME if FONT_NAME else None)
         self.test_btn.bind(on_release=self.on_test_rss)
         self.send_btn.bind(on_release=self.on_send)
 
@@ -191,20 +193,19 @@ class NewsApp(App):
         btn_row.add_widget(self.send_btn)
         content.add_widget(btn_row)
 
-        # Status labels
         self.status_label = Label(
             text="آماده...",
             font_size="16sp",
             size_hint=(1, None),
-            height=120,
+            height=160,
             halign="left",
-            valign="top"
+            valign="top",
+            font_name=FONT_NAME if FONT_NAME else None
         )
         self.status_label.bind(size=self.status_label.setter("text_size"))
         content.add_widget(self.status_label)
 
         self.load_config()
-
         return root
 
     # ---------------- CONFIG ----------------
@@ -235,7 +236,6 @@ class NewsApp(App):
             pass
 
     def on_stop(self):
-        # وقتی اپ بسته میشه هم ذخیره کن
         self.save_config()
 
     # ---------------- UI HELPERS ----------------
@@ -248,21 +248,21 @@ class NewsApp(App):
 
     # ---------------- ACTIONS ----------------
     def on_test_rss(self, *_):
-        self.set_status("Testing RSS ...")
+        self.set_status("در حال تست RSS ...")
 
         def task():
             try:
                 items, total = collect_news_safe()
                 Clock.schedule_once(
                     lambda dt: self.set_status(
-                        f"RSS OK\nTotal entries seen: {total}\nCollected items: {len(items)}"
+                        f"RSS OK ✅\nتعداد کل ورودی‌ها: {total}\nتعداد خبرهای جمع‌آوری‌شده: {len(items)}"
                     ), 0
                 )
             except Exception as e:
                 tb = traceback.format_exc()
                 Clock.schedule_once(
                     lambda dt: self.set_status(
-                        f"Import/Run error:\n{e}\n\n{tb}"
+                        f"خطا در اجرا/ایمپورت:\n{e}\n\n{tb}"
                     ), 0
                 )
 
@@ -284,8 +284,7 @@ class NewsApp(App):
             max_emails = 5
 
         to_emails = [x.strip() for x in recipient_raw.split(",") if x.strip()]
-
-        self.set_status("Sending...")
+        self.set_status("در حال ارسال...")
 
         def task():
             try:
@@ -297,7 +296,7 @@ class NewsApp(App):
                 if ok:
                     out = f"{msg}\nارسال شد: {len(news_items)} خبر"
                 else:
-                    out = f"ERROR هنگام ارسال:\n{msg}"
+                    out = f"خطا هنگام ارسال:\n{msg}"
 
                 Clock.schedule_once(lambda dt: self.set_status(out), 0)
 
@@ -305,7 +304,7 @@ class NewsApp(App):
                 tb = traceback.format_exc()
                 Clock.schedule_once(
                     lambda dt: self.set_status(
-                        f"ERROR:\n{e}\n\n{tb}"
+                        f"خطا:\n{e}\n\n{tb}"
                     ), 0
                 )
 
