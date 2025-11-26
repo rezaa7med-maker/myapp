@@ -31,8 +31,9 @@ from kivy.utils import get_color_from_hex
 # ------------------------------------------------------------
 def write_crash(app_dir, text):
     try:
-        os.makedirs(app_dir, exist_ok=True)
-        path = os.path.join(app_dir, "crash.txt")
+        downloads = "/sdcard/Download"
+        os.makedirs(downloads, exist_ok=True)
+        path = os.path.join(downloads, "crash.txt")
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
     except Exception:
