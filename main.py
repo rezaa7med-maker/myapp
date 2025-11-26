@@ -1,13 +1,23 @@
 import os
+import json
 import threading
-import ssl
-import smtplib
 import time
 import traceback
+import ssl
+import smtplib
+import base64
+
+# -------------------------------------------------
+#  FIX: old libs calling base64.decodestring (py3.9+ removed)
+# -------------------------------------------------
+if not hasattr(base64, "decodestring"):
+    base64.decodestring = base64.decodebytes
+
+import requests
+import feedparser
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.scrollview import ScrollView
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
@@ -15,7 +25,7 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 
 
-# ---------------- CONSTANTS ----------------
+# --------- CONSTANT DATA ---------
 RSS_FEEDS = [
     "https://parsi.euronews.com/index.php/rss?level=program&name=world",
     "https://www.mehrnews.com/index.php?module=persian&func=rss&service_id=1",
@@ -26,13 +36,8 @@ REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Android) KivyApp/1.0"
 }
 
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT_STARTTLS = 587
-SMTP_TIMEOUT = 15
-SMTP_RETRIES = 2
 
-
-# ---------------- HELPERS ----------------
+# --------- FILE UTILS ---------
 def write_crash(app_dir, text):
     try:
         os.makedirs(app_dir, exist_ok=True)
@@ -43,40 +48,41 @@ def write_crash(app_dir, text):
         pass
 
 
-def collect_news_safe(log_func=print):
-    items = []
+def load_sent_titles(filename: str) -> set:
     try:
-        import requests
-        import feedparser
-    except Exception as e:
-        log_func(f"Import error: {e}")
-        return items
+        with open(filename, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f.readlines()]
+        return set(line for line in lines if line)
+    except FileNotFoundError:
+        return set()
+    except Exception:
+        return set()
+
+
+def append_sent_titles(filename: str, titles: list) -> None:
+    if not titles:
+        return
+    try:
+        with open(filename, "a", encoding="utf-8") as f:
+            for title in titles:
+                safe_title = title.replace("\n", " ")
+                f.write(safe_title + "\n")
+    except Exception:
+        pass
+
+
+# --------- RSS SAFE FETCH ---------
+def collect_news_safe(log_func=print, timeout=10):
+    items = []
 
     for url in RSS_FEEDS:
         try:
-            log_func(f"Fetching: {url}")
+            r = requests.get(url, headers=REQUEST_HEADERS, timeout=timeout)
+            r.raise_for_status()
 
-            r = requests.get(
-                url,
-                headers=REQUEST_HEADERS,
-                timeout=12,
-                allow_redirects=True
-            )
-
-            log_func(f"Status {r.status_code} | bytes={len(r.content)}")
-
-            if r.status_code != 200:
-                continue
-
-            feed = feedparser.parse(r.content)
-
-            if getattr(feed, "bozo", False):
-                be = getattr(feed, "bozo_exception", None)
-                log_func(f"Parse warning: {be}")
+            feed = feedparser.parse(r.text)
 
             entries = getattr(feed, "entries", []) or []
-            log_func(f"Items in this feed: {len(entries)}")
-
             for entry in entries:
                 title = getattr(entry, "title", "").strip()
                 summary = getattr(entry, "summary", "").strip() or title
@@ -90,228 +96,178 @@ def collect_news_safe(log_func=print):
     return items
 
 
-def send_emails_starttls(sender_email, app_password, to_emails, news_items, log_func=print):
+# --------- EMAIL ---------
+def send_emails(sender_email, app_password, to_emails, news_items, log_func=print):
+    # default secure SSL context
     context = ssl.create_default_context()
-    last_err = None
 
-    for attempt in range(SMTP_RETRIES + 1):
-        try:
-            log_func(f"SMTP connect... (try {attempt+1})")
-            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT_STARTTLS, timeout=SMTP_TIMEOUT)
-            server.ehlo()
-            server.starttls(context=context)
-            server.ehlo()
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=15) as server:
+        server.login(sender_email, app_password)
 
-            server.login(sender_email, app_password)
+        for title, summary in news_items:
+            subject = title
+            body = summary
 
-            for title, summary in news_items:
-                subject = title
-                body = summary
+            msg = "\n".join([
+                f"To: {', '.join(to_emails)}",
+                f"Subject: {subject}",
+                "",
+                body
+            ])
 
-                message_lines = [
-                    f"To: {', '.join(to_emails)}",
-                    f"Subject: {subject}",
-                    "Content-Type: text/plain; charset=utf-8",
-                    "",
-                    body,
-                ]
-                message = "\n".join(message_lines)
-
-                server.sendmail(
-                    sender_email,
-                    to_emails,
-                    message.encode("utf-8"),
-                )
-                log_func(f"Sent: {subject}")
-
-            server.quit()
-            return
-
-        except Exception as e:
-            last_err = e
-            log_func(f"SMTP error: {e}")
-            try:
-                server.quit()
-            except Exception:
-                pass
-            time.sleep(1.5)
-
-    raise last_err
+            server.sendmail(sender_email, to_emails, msg.encode("utf-8"))
+            log_func(f"Sent: {subject}")
 
 
-# ---------------- APP ----------------
+# --------- MAIN APP ---------
 class NewsApp(App):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.config_file = None
+        self.sent_file = None
+        self.stats_file = None
+
+        self.total_sent = 0
+
+        # UI refs
+        self.sender_input = None
+        self.pass_input = None
+        self.recipient_input = None
+        self.max_emails_input = None
+        self.status_label = None
+
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
 
-        # Scroll root so UI never squishes
-        scroll = ScrollView(size_hint=(1, 1))
-        root = BoxLayout(
-            orientation="vertical",
-            padding=20,
-            spacing=12,
-            size_hint_y=None
-        )
-        root.bind(minimum_height=root.setter("height"))
-        scroll.add_widget(root)
+        root = BoxLayout(orientation="vertical", padding=20, spacing=10)
 
-        self.title_label = Label(
-            text="News Mailer (Safe Boot)",
-            font_size="22sp",
-            size_hint=(1, None),
-            height=60,
-        )
+        title = Label(text="News Mailer (Safe Boot)", font_size="22sp", size_hint=(1, None), height=50)
+        root.add_widget(title)
 
-        self.sender_input = TextInput(
-            hint_text="Sender Gmail",
-            multiline=False,
-            size_hint=(1, None),
-            height=55,
-            font_size="18sp",
-        )
+        self.sender_input = TextInput(hint_text="Sender Gmail", multiline=False, size_hint=(1, None), height=40)
+        self.pass_input = TextInput(hint_text="App Password (16 chars)", multiline=False, password=True, size_hint=(1, None), height=40)
+        self.recipient_input = TextInput(hint_text="Recipient email", multiline=False, size_hint=(1, None), height=40)
+        self.max_emails_input = TextInput(hint_text="Max emails", multiline=False, input_filter="int", size_hint=(1, None), height=40)
 
-        self.pass_input = TextInput(
-            hint_text="App Password (16 chars)",
-            password=True,
-            multiline=False,
-            size_hint=(1, None),
-            height=55,
-            font_size="18sp",
-        )
-
-        self.recipient_input = TextInput(
-            hint_text="Recipient email",
-            multiline=False,
-            size_hint=(1, None),
-            height=55,
-            font_size="18sp",
-        )
-
-        self.max_input = TextInput(
-            hint_text="Max emails",
-            input_filter="int",
-            multiline=False,
-            size_hint=(1, None),
-            height=55,
-            font_size="18sp",
-        )
-
-        self.test_btn = Button(
-            text="Test RSS",
-            size_hint=(1, None),
-            height=65,
-            font_size="20sp",
-        )
-        self.send_btn = Button(
-            text="Send",
-            size_hint=(1, None),
-            height=65,
-            font_size="20sp",
-        )
-
-        self.test_btn.bind(on_press=self.on_test_rss)
-        self.send_btn.bind(on_press=self.on_send)
-
-        self.status_label = Label(
-            text="Ready.",
-            font_size="16sp",
-            size_hint=(1, None),
-            height=400,
-            halign="left",
-            valign="top",
-        )
-        self.status_label.bind(size=lambda inst, val: inst.setter("text_size")(inst, val))
-
-        root.add_widget(self.title_label)
         root.add_widget(self.sender_input)
         root.add_widget(self.pass_input)
         root.add_widget(self.recipient_input)
-        root.add_widget(self.max_input)
-        root.add_widget(self.test_btn)
-        root.add_widget(self.send_btn)
+        root.add_widget(self.max_emails_input)
+
+        btn_row = BoxLayout(orientation="vertical", spacing=8, size_hint=(1, None), height=120)
+
+        test_btn = Button(text="Test RSS", size_hint=(1, None), height=50)
+        send_btn = Button(text="Send", size_hint=(1, None), height=50)
+
+        test_btn.bind(on_press=self.on_test_rss)
+        send_btn.bind(on_press=self.on_send)
+
+        btn_row.add_widget(test_btn)
+        btn_row.add_widget(send_btn)
+        root.add_widget(btn_row)
+
+        self.status_label = Label(text="Ready.", font_size="16sp")
         root.add_widget(self.status_label)
 
-        return scroll
+        return root
 
-    def log(self, msg):
+    def on_start(self):
+        self.config_file = os.path.join(self.user_data_dir, "config.json")
+        self.sent_file = os.path.join(self.user_data_dir, "sent_titles.txt")
+        self.stats_file = os.path.join(self.user_data_dir, "stats.json")
+        self.load_config()
+
+    # --------- CONFIG ---------
+    def load_config(self):
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                self.sender_input.text = cfg.get("sender", "")
+                self.pass_input.text = cfg.get("password", "")
+                self.recipient_input.text = cfg.get("recipient", "")
+                self.max_emails_input.text = str(cfg.get("max_emails", 3))
+        except Exception:
+            pass
+
+    def save_config(self):
+        try:
+            cfg = {
+                "sender": self.sender_input.text.strip(),
+                "password": self.pass_input.text.strip(),
+                "recipient": self.recipient_input.text.strip(),
+                "max_emails": int(self.max_emails_input.text.strip() or "3"),
+            }
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    # --------- UI LOG ---------
+    def set_status(self, text):
         def _u(dt):
-            self.status_label.text += ("\n" + msg)
+            self.status_label.text = text
         Clock.schedule_once(_u, 0)
 
-    def clear_log(self):
-        def _c(dt):
-            self.status_label.text = ""
-        Clock.schedule_once(_c, 0)
+    # --------- BUTTONS ---------
+    def on_test_rss(self, _):
+        self.set_status("Testing RSS ...")
 
-    def on_test_rss(self, instance):
-        self.clear_log()
-        self.log("Testing RSS ...")
-        t = threading.Thread(target=self._test_rss_bg, daemon=True)
-        t.start()
+        def worker():
+            try:
+                news = collect_news_safe(log_func=self.set_status)
+                self.set_status(f"RSS OK, items: {len(news)}")
+            except Exception as e:
+                self.set_status(f"RSS FAILED: {e}")
 
-    def _test_rss_bg(self):
-        try:
-            news = collect_news_safe(log_func=self.log)
-            self.log(f"TOTAL items collected: {len(news)}")
-        except Exception as e:
-            self.log(f"RSS ERROR: {e}")
+        threading.Thread(target=worker, daemon=True).start()
 
-    def on_send(self, instance):
+    def on_send(self, _):
         sender = self.sender_input.text.strip()
-        app_pass = self.pass_input.text.strip()
+        password = self.pass_input.text.strip()
         recipient = self.recipient_input.text.strip()
-        max_text = self.max_input.text.strip()
+        max_emails = int(self.max_emails_input.text.strip() or "3")
 
-        if not sender or not app_pass or not recipient:
-            self.log("Fill sender, password, recipient.")
+        if not sender or not password or not recipient:
+            self.set_status("Fill sender, password, recipient.")
             return
 
-        try:
-            max_emails = int(max_text) if max_text else 2
-            if max_emails <= 0:
-                max_emails = 1
-        except Exception:
-            max_emails = 2
+        self.save_config()
+        self.set_status("Collecting RSS ...")
 
-        self.send_btn.disabled = True
-        self.log("Sending...")
-
-        t = threading.Thread(
-            target=self._send_bg,
-            args=(sender, app_pass, [recipient], max_emails),
-            daemon=True
-        )
-        t.start()
-
-    def _send_bg(self, sender, app_pass, recipients, max_emails):
-        try:
-            news = collect_news_safe(log_func=self.log)
-            if not news:
-                self.log("No news to send.")
-                return
-
-            to_send = news[:max_emails]
-            self.log(f"SMTP send {len(to_send)} items...")
-
-            send_emails_starttls(sender, app_pass, recipients, to_send, log_func=self.log)
-
-            self.log("Done! Emails sent.")
-
-        except Exception as e:
-            tb = traceback.format_exc()
-            self.log(f"ERROR: {e}")
-
+        def worker():
             try:
-                app_dir = self.user_data_dir
-            except Exception:
-                app_dir = "/sdcard"
-            write_crash(app_dir, tb)
+                sent_titles = load_sent_titles(self.sent_file)
+                all_items = collect_news_safe(log_func=self.set_status)
 
-        finally:
-            def _enable(dt):
-                self.send_btn.disabled = False
-            Clock.schedule_once(_enable, 0)
+                new_items = [(t, s) for (t, s) in all_items if t not in sent_titles]
+                if not new_items:
+                    self.set_status("No new items.")
+                    return
+
+                to_send = new_items[:max_emails]
+                self.set_status(f"Sending {len(to_send)} mails ...")
+
+                send_emails(sender, password, [recipient], to_send, log_func=self.set_status)
+
+                append_sent_titles(self.sent_file, [t for (t, _) in to_send])
+                self.set_status("Done ✅")
+
+            except Exception as e:
+                tb = traceback.format_exc()
+                self.set_status(f"ERROR: {e}")
+                write_crash(self.user_data_dir, tb)
+
+        threading.Thread(target=worker, daemon=True).start()
 
 
 if __name__ == "__main__":
-    NewsApp().run()
+    try:
+        NewsApp().run()
+    except Exception:
+        tb = traceback.format_exc()
+        try:
+            write_crash("/sdcard", tb)
+        except Exception:
+            pass
+        raise
