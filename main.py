@@ -191,7 +191,7 @@ class NewsApp(App):
                 multiline=False,
                 password=password,
                 size_hint=(1, None),
-                height=80,
+                height=160,
                 font_size="18sp",
                 padding=[10, 10, 10, 10]
             )
