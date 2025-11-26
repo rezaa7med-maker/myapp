@@ -150,16 +150,13 @@ class NewsApp(App):
         )
         root.add_widget(title)
 
-        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         content = BoxLayout(
             orientation="vertical",
-            size_hint_y=None,
+            size_hint=(1, 1),
             padding=10,
             spacing=10
         )
-        content.bind(minimum_height=content.setter("height"))
-        scroll.add_widget(content)
-        root.add_widget(scroll)
+        root.add_widget(content)
 
         def make_input(hint, password=False):
             ti = TextInput(
@@ -178,6 +175,8 @@ class NewsApp(App):
         self.pass_input = make_input("App Password (16 chars)", password=True)
         self.recipient_input = make_input("Recipient email (comma separated)")
         self.max_emails_input = make_input("Max emails (number)")
+
+        content.add_widget(Widget(size_hint=(1, 1)))
 
         content.add_widget(self.sender_input)
         content.add_widget(self.pass_input)
@@ -211,6 +210,8 @@ class NewsApp(App):
         content.add_widget(self.status_label)
 
         content.add_widget(Widget(size_hint=(1, None), height=20))
+
+        content.add_widget(Widget(size_hint=(1, 1)))
 
         self.load_config()
         return root
