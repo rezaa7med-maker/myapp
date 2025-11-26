@@ -118,9 +118,9 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
                         msg.encode("utf-8"),
                     )
 
-            return True, ("Sent with verified SSL ✅"
+            return True, ("Sent with verified SSL"
                           if verified else
-                          "Sent without SSL verification ⚠️")
+                          "Sent without SSL verification")
 
         except Exception as e:
             last_err = e
@@ -262,7 +262,7 @@ class NewsApp(App):
                 items, total = collect_news_safe()
                 Clock.schedule_once(
                     lambda dt: self.set_status(
-                        f"RSS OK ✅\nTotal entries: {total}\nCollected items: {len(items)}"
+                        f"RSS OK\nTotal entries: {total}\nCollected items: {len(items)}"
                     ), 0
                 )
             except Exception as e:
