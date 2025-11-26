@@ -15,36 +15,33 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.core.text import LabelBase
-from kivy.resources import resource_find
 
 
-# ---------------------------------------------------------
-# Fix for libs that still call base64.decodestring/encodestring
-# ---------------------------------------------------------
+# -------------------------------------------------------------------
+# Fix for libraries that still call base64.decodestring/encodestring
+# MUST be at top before anything uses base64 internally.
+# -------------------------------------------------------------------
 if not hasattr(base64, "decodestring"):
     base64.decodestring = base64.decodebytes
 if not hasattr(base64, "encodestring"):
     base64.encodestring = base64.encodebytes
 
 
-# ---------------------------------------------------------
-# Persian font setup
-# font file: fonts/Vazirmatn-Regular.ttf
-# ---------------------------------------------------------
-FONT_NAME = "Vazirmatn"
-FONT_REL_PATH = os.path.join("fonts", "Vazirmatn-Regular.ttf")
-FONT_PATH = resource_find(FONT_REL_PATH) or FONT_REL_PATH
-
+# -------------------------------------------------------------------
+# Optional certifi (better SSL on Android)
+# -------------------------------------------------------------------
 try:
-    LabelBase.register(name=FONT_NAME, fn_regular=FONT_PATH)
+    import certifi
+    CERT_PATH = certifi.where()
+    os.environ["SSL_CERT_FILE"] = CERT_PATH
+    os.environ["REQUESTS_CA_BUNDLE"] = CERT_PATH
 except Exception:
-    FONT_NAME = None
+    CERT_PATH = None
 
 
-# ---------------------------------------------------------
+# -------------------------------------------------------------------
 # CONSTANTS
-# ---------------------------------------------------------
+# -------------------------------------------------------------------
 RSS_FEEDS = [
     "https://parsi.euronews.com/index.php/rss?level=program&name=world",
     "https://www.mehrnews.com/index.php?module=persian&func=rss&service_id=1",
@@ -56,9 +53,9 @@ REQUEST_HEADERS = {
 }
 
 
-# ---------------------------------------------------------
+# -------------------------------------------------------------------
 # HELPERS
-# ---------------------------------------------------------
+# -------------------------------------------------------------------
 def collect_news_safe(log_func=print):
     import requests
     import feedparser
@@ -68,7 +65,11 @@ def collect_news_safe(log_func=print):
 
     for url in RSS_FEEDS:
         try:
-            r = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
+            if CERT_PATH:
+                r = requests.get(url, headers=REQUEST_HEADERS, timeout=10, verify=CERT_PATH)
+            else:
+                r = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
+
             r.raise_for_status()
 
             feed = feedparser.parse(r.text)
@@ -87,89 +88,74 @@ def collect_news_safe(log_func=print):
     return items, total_entries
 
 
-def _send_via_smtp_ssl(sender_email, app_password, to_emails, news_items, verify_ssl=True):
-    if verify_ssl:
-        context = ssl.create_default_context()
-    else:
-        context = ssl._create_unverified_context()
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=20) as server:
-        server.login(sender_email, app_password)
-        for title, summary in news_items:
-            msg = "\n".join([
-                f"To: {', '.join(to_emails)}",
-                f"Subject: {title}",
-                "",
-                summary,
-            ])
-            server.sendmail(sender_email, to_emails, msg.encode("utf-8"))
-
-
-def _send_via_starttls(sender_email, app_password, to_emails, news_items, verify_ssl=True):
-    context = ssl.create_default_context() if verify_ssl else ssl._create_unverified_context()
-
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
-        server.ehlo()
-        server.starttls(context=context)
-        server.ehlo()
-        server.login(sender_email, app_password)
-        for title, summary in news_items:
-            msg = "\n".join([
-                f"To: {', '.join(to_emails)}",
-                f"Subject: {title}",
-                "",
-                summary,
-            ])
-            server.sendmail(sender_email, to_emails, msg.encode("utf-8"))
-
-
 def send_emails_safe(sender_email, app_password, to_emails, news_items):
     last_err = None
 
-    attempts = [
-        ("SSL-465 (verify)", lambda: _send_via_smtp_ssl(sender_email, app_password, to_emails, news_items, True)),
-        ("SSL-465 (no-verify)", lambda: _send_via_smtp_ssl(sender_email, app_password, to_emails, news_items, False)),
-        ("STARTTLS-587 (verify)", lambda: _send_via_starttls(sender_email, app_password, to_emails, news_items, True)),
-        ("STARTTLS-587 (no-verify)", lambda: _send_via_starttls(sender_email, app_password, to_emails, news_items, False)),
-    ]
-
-    for label, fn in attempts:
+    for verified in (True, False):
         try:
-            fn()
-            return True, f"ارسال موفق با روش: {label}"
+            if verified:
+                if CERT_PATH:
+                    context = ssl.create_default_context(cafile=CERT_PATH)
+                else:
+                    context = ssl.create_default_context()
+            else:
+                context = ssl._create_unverified_context()
+
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=20) as server:
+                server.login(sender_email, app_password)
+
+                for title, summary in news_items:
+                    msg = "\n".join([
+                        f"To: {', '.join(to_emails)}",
+                        f"Subject: {title}",
+                        "",
+                        summary,
+                    ])
+
+                    server.sendmail(
+                        sender_email,
+                        to_emails,
+                        msg.encode("utf-8"),
+                    )
+
+            return True, ("Sent with verified SSL ✅"
+                          if verified else
+                          "Sent without SSL verification ⚠️")
+
         except Exception as e:
             last_err = e
+            if verified and "CERTIFICATE_VERIFY_FAILED" in str(e):
+                continue
+            break
 
     return False, str(last_err)
 
 
-# ---------------------------------------------------------
+# -------------------------------------------------------------------
 # MAIN APP
-# ---------------------------------------------------------
+# -------------------------------------------------------------------
 class NewsApp(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
-        Window.softinput_mode = "below_target"
 
         self.config_path = os.path.join(self.user_data_dir, "config.json")
 
-        root = BoxLayout(orientation="vertical", padding=12, spacing=12)
+        root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
         title = Label(
             text="News Mailer (Safe Boot)",
             font_size="22sp",
             size_hint=(1, None),
-            height=52,
-            font_name=FONT_NAME if FONT_NAME else None
+            height=50
         )
         root.add_widget(title)
 
-        scroll = ScrollView(size_hint=(1, 1))
+        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         content = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
             padding=10,
-            spacing=12
+            spacing=10
         )
         content.bind(minimum_height=content.setter("height"))
         scroll.add_widget(content)
@@ -181,9 +167,9 @@ class NewsApp(App):
                 multiline=False,
                 password=password,
                 size_hint=(1, None),
-                height=60,
+                height=54,
                 font_size="18sp",
-                font_name=FONT_NAME if FONT_NAME else None
+                padding=[10, 10, 10, 10]
             )
             ti.bind(text=lambda *_: self.save_config())
             return ti
@@ -201,21 +187,11 @@ class NewsApp(App):
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
-            height=62,
-            spacing=12
+            height=56,
+            spacing=10
         )
-
-        self.test_btn = Button(
-            text="Test RSS",
-            size_hint=(1, 1),
-            font_name=FONT_NAME if FONT_NAME else None
-        )
-        self.send_btn = Button(
-            text="Send",
-            size_hint=(1, 1),
-            font_name=FONT_NAME if FONT_NAME else None
-        )
-
+        self.test_btn = Button(text="Test RSS")
+        self.send_btn = Button(text="Send")
         self.test_btn.bind(on_release=self.on_test_rss)
         self.send_btn.bind(on_release=self.on_send)
 
@@ -224,28 +200,20 @@ class NewsApp(App):
         content.add_widget(btn_row)
 
         self.status_label = Label(
-            text="آماده...",
+            text="Ready...",
             font_size="16sp",
             size_hint=(1, None),
-            height=200,
+            height=220,
             halign="left",
-            valign="top",
-            font_name=FONT_NAME if FONT_NAME else None
+            valign="top"
         )
-        self.status_label.bind(size=lambda *_: self._update_text_size())
+        self.status_label.bind(size=self.status_label.setter("text_size"))
         content.add_widget(self.status_label)
 
-        # spacer to avoid everything sticking to top visually
-        content.add_widget(Widget(size_hint=(1, None), height=40))
-
-        if FONT_NAME is None:
-            self.set_status("فونت پیدا نشد. مطمئن شو فایل fonts/Vazirmatn-Regular.ttf داخل پروژه هست و پسوند ttf تو buildozer اضافه شده.")
+        content.add_widget(Widget(size_hint=(1, None), height=20))
 
         self.load_config()
         return root
-
-    def _update_text_size(self):
-        self.status_label.text_size = (self.status_label.width, None)
 
     # ---------------- CONFIG ----------------
     def load_config(self):
@@ -287,21 +255,21 @@ class NewsApp(App):
 
     # ---------------- ACTIONS ----------------
     def on_test_rss(self, *_):
-        self.set_status("در حال تست RSS ...")
+        self.set_status("Testing RSS ...")
 
         def task():
             try:
                 items, total = collect_news_safe()
                 Clock.schedule_once(
                     lambda dt: self.set_status(
-                        f"RSS OK ✅\nتعداد کل ورودی‌ها: {total}\nتعداد خبرهای جمع‌آوری‌شده: {len(items)}"
+                        f"RSS OK ✅\nTotal entries: {total}\nCollected items: {len(items)}"
                     ), 0
                 )
             except Exception as e:
                 tb = traceback.format_exc()
                 Clock.schedule_once(
                     lambda dt: self.set_status(
-                        f"خطا در RSS:\n{e}\n\n{tb}"
+                        f"RSS Error:\n{e}\n\n{tb}"
                     ), 0
                 )
 
@@ -314,7 +282,7 @@ class NewsApp(App):
         max_raw = self.max_emails_input.text.strip()
 
         if not sender or not app_pass or not recipient_raw:
-            self.set_status("لطفاً فرستنده، رمز اپ و گیرنده را کامل وارد کن.")
+            self.set_status("Please fill sender, app password, and recipient.")
             return
 
         try:
@@ -323,23 +291,19 @@ class NewsApp(App):
             max_emails = 5
 
         to_emails = [x.strip() for x in recipient_raw.split(",") if x.strip()]
-        self.set_status("در حال ارسال...")
+        self.set_status("Sending...")
 
         def task():
             try:
                 news_items, total = collect_news_safe()
                 news_items = news_items[:max_emails]
 
-                if not news_items:
-                    Clock.schedule_once(lambda dt: self.set_status("هیچ خبری برای ارسال پیدا نشد."), 0)
-                    return
-
                 ok, msg = send_emails_safe(sender, app_pass, to_emails, news_items)
 
                 if ok:
-                    out = f"{msg}\nارسال شد: {len(news_items)} خبر"
+                    out = f"{msg}\nSent items: {len(news_items)}"
                 else:
-                    out = f"خطا هنگام ارسال:\n{msg}\n\n(احتمالاً بدون VPN یا شبکه‌ی محدودشده به Gmail وصل هستی)"
+                    out = f"Send error:\n{msg}"
 
                 Clock.schedule_once(lambda dt: self.set_status(out), 0)
 
@@ -347,7 +311,7 @@ class NewsApp(App):
                 tb = traceback.format_exc()
                 Clock.schedule_once(
                     lambda dt: self.set_status(
-                        f"خطا:\n{e}\n\n{tb}"
+                        f"Error:\n{e}\n\n{tb}"
                     ), 0
                 )
 
