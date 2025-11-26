@@ -23,6 +23,7 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
 from kivy.core.window import Window
+from kivy.uix.scrollview import ScrollView
 
 
 # --------- CONSTANT DATA ---------
@@ -74,15 +75,14 @@ def append_sent_titles(filename: str, titles: list) -> None:
 # --------- RSS SAFE FETCH ---------
 def collect_news_safe(log_func=print, timeout=10):
     items = []
-
     for url in RSS_FEEDS:
         try:
             r = requests.get(url, headers=REQUEST_HEADERS, timeout=timeout)
             r.raise_for_status()
 
             feed = feedparser.parse(r.text)
-
             entries = getattr(feed, "entries", []) or []
+
             for entry in entries:
                 title = getattr(entry, "title", "").strip()
                 summary = getattr(entry, "summary", "").strip() or title
@@ -98,7 +98,6 @@ def collect_news_safe(log_func=print, timeout=10):
 
 # --------- EMAIL ---------
 def send_emails(sender_email, app_password, to_emails, news_items, log_func=print):
-    # default secure SSL context
     context = ssl.create_default_context()
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=15) as server:
@@ -125,11 +124,7 @@ class NewsApp(App):
         super().__init__(**kwargs)
         self.config_file = None
         self.sent_file = None
-        self.stats_file = None
 
-        self.total_sent = 0
-
-        # UI refs
         self.sender_input = None
         self.pass_input = None
         self.recipient_input = None
@@ -139,42 +134,83 @@ class NewsApp(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
 
-        root = BoxLayout(orientation="vertical", padding=20, spacing=10)
+        # --- Scroll root ---
+        scroll = ScrollView(size_hint=(1, 1))
+        content = BoxLayout(
+            orientation="vertical",
+            padding=20,
+            spacing=12,
+            size_hint_y=None
+        )
+        content.bind(minimum_height=content.setter("height"))
+        scroll.add_widget(content)
 
-        title = Label(text="News Mailer (Safe Boot)", font_size="22sp", size_hint=(1, None), height=50)
-        root.add_widget(title)
+        # --- Title ---
+        title = Label(
+            text="News Mailer (Safe Boot)",
+            font_size="22sp",
+            size_hint_y=None,
+            height=60
+        )
+        content.add_widget(title)
 
-        self.sender_input = TextInput(hint_text="Sender Gmail", multiline=False, size_hint=(1, None), height=40)
-        self.pass_input = TextInput(hint_text="App Password (16 chars)", multiline=False, password=True, size_hint=(1, None), height=40)
-        self.recipient_input = TextInput(hint_text="Recipient email", multiline=False, size_hint=(1, None), height=40)
-        self.max_emails_input = TextInput(hint_text="Max emails", multiline=False, input_filter="int", size_hint=(1, None), height=40)
+        # --- Inputs ---
+        def make_input(hint, password=False):
+            return TextInput(
+                hint_text=hint,
+                multiline=False,
+                password=password,
+                size_hint_y=None,
+                height=48
+            )
 
-        root.add_widget(self.sender_input)
-        root.add_widget(self.pass_input)
-        root.add_widget(self.recipient_input)
-        root.add_widget(self.max_emails_input)
+        self.sender_input = make_input("Sender Gmail")
+        self.pass_input = make_input("App Password (16 chars)", password=True)
+        self.recipient_input = make_input("Recipient email")
+        self.max_emails_input = make_input("Max emails")
 
-        btn_row = BoxLayout(orientation="vertical", spacing=8, size_hint=(1, None), height=120)
+        content.add_widget(self.sender_input)
+        content.add_widget(self.pass_input)
+        content.add_widget(self.recipient_input)
+        content.add_widget(self.max_emails_input)
 
-        test_btn = Button(text="Test RSS", size_hint=(1, None), height=50)
-        send_btn = Button(text="Send", size_hint=(1, None), height=50)
+        # --- Buttons row ---
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            spacing=10,
+            size_hint_y=None,
+            height=55
+        )
+
+        test_btn = Button(text="Test RSS")
+        send_btn = Button(text="Send")
 
         test_btn.bind(on_press=self.on_test_rss)
         send_btn.bind(on_press=self.on_send)
 
         btn_row.add_widget(test_btn)
         btn_row.add_widget(send_btn)
-        root.add_widget(btn_row)
+        content.add_widget(btn_row)
 
-        self.status_label = Label(text="Ready.", font_size="16sp")
-        root.add_widget(self.status_label)
+        # --- Status label ---
+        self.status_label = Label(
+            text="Ready.",
+            font_size="16sp",
+            size_hint_y=None,
+            height=200,
+            halign="left",
+            valign="top"
+        )
+        self.status_label.bind(
+            size=lambda *x: self.status_label.setter("text_size")(self.status_label, (self.status_label.width, None))
+        )
+        content.add_widget(self.status_label)
 
-        return root
+        return scroll
 
     def on_start(self):
         self.config_file = os.path.join(self.user_data_dir, "config.json")
         self.sent_file = os.path.join(self.user_data_dir, "sent_titles.txt")
-        self.stats_file = os.path.join(self.user_data_dir, "stats.json")
         self.load_config()
 
     # --------- CONFIG ---------
