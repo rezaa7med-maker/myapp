@@ -3,7 +3,7 @@ title = My Application
 package.name = myapp
 package.domain = org.test
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,ttf,otf
 version = 0.1
 
 # only what we need for step 5:
