@@ -175,14 +175,9 @@ def fetch_all_feed_items():
 
 # --------------------- Email sending ---------------------
 def send_one_sender_batch(sender_email, app_password, recipients, batch_items, delay_seconds, log_func):
-    """
-    Sends batch_items using one sender. Marks successful sends only.
-    Returns set(new_titles_sent)
-    """
     new_titles = set()
     last_err = None
 
-    # Try verified SSL first, then fallback to unverified if needed
     for verified in (True, False):
         try:
             context = ssl.create_default_context() if verified else ssl._create_unverified_context()
@@ -211,10 +206,7 @@ def send_one_sender_batch(sender_email, app_password, recipients, batch_items, d
 
                     time.sleep(delay_seconds)
 
-            if verified:
-                log_func("Sender finished with verified SSL.")
-            else:
-                log_func("Sender finished without SSL verification.")
+            log_func("Sender finished." + (" (verified SSL)" if verified else " (unverified SSL)"))
             return new_titles
 
         except Exception as e:
@@ -274,8 +266,8 @@ class NewsMailerApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.senders = []         # list of {"email":..., "password":...}
-        self.recipients = []      # list of emails
+        self.senders = []
+        self.recipients = []
         self.sent_titles = set()
 
         self.max_emails = DEFAULT_MAX_EMAILS
@@ -283,7 +275,6 @@ class NewsMailerApp(App):
 
         self.is_sending = False
 
-        # UI refs
         self.senders_list_layout = None
         self.recipients_list_layout = None
         self.total_sent_label = None
@@ -297,7 +288,6 @@ class NewsMailerApp(App):
         self.title = APP_TITLE
         Window.clearcolor = get_color_from_hex("#0F1115")
 
-        # paths in user_data_dir (Android safe)
         self.data_dir = self.user_data_dir
         os.makedirs(self.data_dir, exist_ok=True)
 
@@ -309,7 +299,6 @@ class NewsMailerApp(App):
 
         root = BoxLayout(orientation="vertical", spacing=dp(10), padding=dp(12))
 
-        # Header + menu
         header = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -338,7 +327,6 @@ class NewsMailerApp(App):
         header.add_widget(menu_btn)
         root.add_widget(self._card(header))
 
-        # Counters
         status = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -351,7 +339,6 @@ class NewsMailerApp(App):
         status.add_widget(self.remaining_label)
         root.add_widget(self._card(status))
 
-        # Settings row
         settings = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -384,7 +371,6 @@ class NewsMailerApp(App):
 
         root.add_widget(self._card(settings))
 
-        # Senders/Recipients boxes holder
         boxes_holder = BoxLayout(orientation="vertical", spacing=dp(10))
 
         def rebuild_boxes(*_):
@@ -402,7 +388,6 @@ class NewsMailerApp(App):
         rebuild_boxes()
         root.add_widget(boxes_holder)
 
-        # Buttons row: Test RSS + Send
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -421,6 +406,9 @@ class NewsMailerApp(App):
 
         self.refresh_lists()
         self.refresh_counters_async()
+
+        # --------- FIX کرش: ست کردن self.root ---------
+        self.root = root
         return root
 
     def _card(self, widget):
@@ -440,15 +428,17 @@ class NewsMailerApp(App):
 
         dropdown.add_widget(reset_btn)
         dropdown.add_widget(exit_btn)
-        dropdown.open(self.root.children[0])
+
+        # --------- FIX کرش: امن‌ترین حالت open ---------
+        dropdown.open(self.root)
 
     def confirm_reset(self):
         self.show_confirm(
-            title="Are you sure?",
-            message="This will clear the sent titles log.",
-            yes_text="Yes",
-            no_text="No",
-            on_yes=self.do_reset,
+            "Are you sure?",
+            "This will clear the sent titles log.",
+            "Yes",
+            "No",
+            self.do_reset,
         )
 
     def do_reset(self):
