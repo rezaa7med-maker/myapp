@@ -14,23 +14,21 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
+from kivy.uix.popup import Popup
+from kivy.uix.gridlayout import GridLayout
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.metrics import dp
 
 
-# -------------------------------------------------------------------
 # Fix for libraries that still call base64.decodestring/encodestring
-# -------------------------------------------------------------------
 if not hasattr(base64, "decodestring"):
     base64.decodestring = base64.decodebytes
 if not hasattr(base64, "encodestring"):
     base64.encodestring = base64.encodebytes
 
 
-# -------------------------------------------------------------------
 # Optional certifi (better SSL on Android)
-# -------------------------------------------------------------------
 try:
     import certifi
     CERT_PATH = certifi.where()
@@ -40,9 +38,6 @@ except Exception:
     CERT_PATH = None
 
 
-# -------------------------------------------------------------------
-# CONSTANTS
-# -------------------------------------------------------------------
 RSS_FEEDS = [
     "https://parsi.euronews.com/index.php/rss?level=program&name=world",
     "https://www.mehrnews.com/index.php?module=persian&func=rss&service_id=1",
@@ -57,9 +52,6 @@ RSS_PER_FEED_TIMEOUT = (5, 8)
 RSS_TOTAL_TIMEOUT = 20
 
 
-# -------------------------------------------------------------------
-# HELPERS
-# -------------------------------------------------------------------
 def collect_news_safe(log_func=print):
     import requests
     import feedparser
@@ -149,13 +141,31 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
     return False, str(last_err)
 
 
-# -------------------------------------------------------------------
-# MAIN APP
-# -------------------------------------------------------------------
+class SenderRow(BoxLayout):
+    def __init__(self, text, on_edit, on_delete, **kwargs):
+        super().__init__(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(6), **kwargs)
+
+        self.lbl = Label(text=text, halign="left", valign="middle", size_hint_x=0.78, font_size="15sp")
+        self.lbl.bind(size=lambda inst, *_: setattr(inst, "text_size", (inst.width, None)))
+
+        btn_edit = Button(text="✎", size_hint_x=0.11, font_size="14sp")
+        btn_del = Button(text="×", size_hint_x=0.11, font_size="14sp")
+
+        btn_edit.bind(on_release=lambda *_: on_edit())
+        btn_del.bind(on_release=lambda *_: on_delete())
+
+        self.add_widget(self.lbl)
+        self.add_widget(btn_edit)
+        self.add_widget(btn_del)
+
+
 class NewsApp(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
+        Window.fullscreen = False
+
         self.config_path = os.path.join(self.user_data_dir, "config.json")
+        self.senders = []
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
@@ -178,11 +188,10 @@ class NewsApp(App):
         scroll.add_widget(content)
         root.add_widget(scroll)
 
-        def make_input(hint, password=False):
+        def make_input(hint):
             ti = TextInput(
                 hint_text=hint,
                 multiline=False,
-                password=password,
                 size_hint=(1, None),
                 height=dp(90),
                 font_size="18sp",
@@ -191,13 +200,12 @@ class NewsApp(App):
             ti.bind(text=lambda *_: self.save_config())
             return ti
 
-        self.sender_input = make_input("Sender Gmail")
-        self.pass_input = make_input("App Password (16 chars)", password=True)
+        self.senders_box = self.build_senders_box()
+        content.add_widget(self.senders_box)
+
         self.recipient_input = make_input("Recipient email (comma separated)")
         self.max_emails_input = make_input("Max emails (number)")
 
-        content.add_widget(self.sender_input)
-        content.add_widget(self.pass_input)
         content.add_widget(self.recipient_input)
         content.add_widget(self.max_emails_input)
 
@@ -226,34 +234,162 @@ class NewsApp(App):
         self.status_label.bind(size=self.status_label.setter("text_size"))
         content.add_widget(self.status_label)
 
-        # Spacer to keep ScrollView draggable even when content is short
-        content.add_widget(Widget(size_hint=(1, None), height=dp(100)))
+        content.add_widget(Widget(size_hint=(1, None), height=dp(90)))
 
         self.load_config()
+        self.refresh_senders_list()
         return root
+
+    def on_start(self):
+        Window.bind(on_keyboard=self.on_keyboard)
+
+    def on_keyboard(self, window, key, scancode, codepoint, modifier):
+        if key == 27:
+            self.show_exit_confirm()
+            return True
+        return False
+
+    def show_exit_confirm(self):
+        self.show_confirm(
+            title="Exit?",
+            message="Exit?",
+            yes_text="Yes, I'm sure",
+            no_text="No",
+            on_yes=self.stop
+        )
+
+    def show_delete_confirm(self, on_yes):
+        self.show_confirm(
+            title="Delete?",
+            message="Delete?",
+            yes_text="Yes, I'm sure",
+            no_text="No",
+            on_yes=on_yes
+        )
+
+    def show_confirm(self, title, message, yes_text, no_text, on_yes):
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
+        content.add_widget(Label(text=message))
+
+        btns = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(6))
+        yes_btn = Button(text=yes_text)
+        no_btn = Button(text=no_text)
+        btns.add_widget(yes_btn)
+        btns.add_widget(no_btn)
+        content.add_widget(btns)
+
+        popup = Popup(title=title, content=content, size_hint=(0.85, None), height=dp(200))
+        yes_btn.bind(on_release=lambda *_: (popup.dismiss(), on_yes()))
+        no_btn.bind(on_release=lambda *_: popup.dismiss())
+        popup.open()
+
+    def build_senders_box(self):
+        box = BoxLayout(orientation="vertical", size_hint=(1, None), height=dp(180), spacing=dp(6), padding=dp(6))
+
+        header = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(36))
+        header.add_widget(Label(text="Senders", halign="left", valign="middle", font_size="16sp"))
+        add_btn = Button(text="Add Sender", size_hint=(None, 1), width=dp(130), font_size="14sp")
+        add_btn.bind(on_release=lambda *_: self.show_sender_form_popup())
+        header.add_widget(add_btn)
+        box.add_widget(header)
+
+        self.senders_list_layout = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
+        self.senders_list_layout.bind(minimum_height=self.senders_list_layout.setter("height"))
+
+        list_scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
+        list_scroll.add_widget(self.senders_list_layout)
+        box.add_widget(list_scroll)
+
+        return box
+
+    def refresh_senders_list(self):
+        self.senders_list_layout.clear_widgets()
+        for idx, s in enumerate(self.senders):
+            email = s.get("email", "")
+            row = SenderRow(
+                text=email,
+                on_edit=lambda i=idx: self.show_sender_form_popup(i),
+                on_delete=lambda i=idx: self.show_delete_confirm(lambda: self.delete_sender(i)),
+            )
+            self.senders_list_layout.add_widget(row)
+
+    def show_sender_form_popup(self, edit_index=None):
+        is_edit = edit_index is not None
+        initial_email = self.senders[edit_index]["email"] if is_edit else ""
+        initial_pw = self.senders[edit_index]["password"] if is_edit else ""
+
+        layout = GridLayout(cols=2, spacing=dp(6), padding=dp(8), size_hint_y=None)
+        layout.bind(minimum_height=layout.setter("height"))
+
+        layout.add_widget(Label(text="Email Address"))
+        email_input = TextInput(text=initial_email, multiline=False)
+        layout.add_widget(email_input)
+
+        layout.add_widget(Label(text="App Password"))
+        pw_input = TextInput(text=initial_pw, multiline=False, password=True)
+        layout.add_widget(pw_input)
+
+        btn_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(6))
+        save_btn = Button(text="Save")
+        cancel_btn = Button(text="No")
+
+        popup = Popup(
+            title="Edit Sender" if is_edit else "Add Sender",
+            content=BoxLayout(orientation="vertical"),
+            size_hint=(0.9, None),
+            height=dp(260)
+        )
+        popup.content.add_widget(layout)
+        popup.content.add_widget(btn_row)
+
+        def submit_and_close(*_):
+            email = email_input.text.strip()
+            password = pw_input.text.strip()
+            if not email or not password:
+                return
+            if is_edit:
+                self.senders[edit_index] = {"email": email, "password": password}
+            else:
+                self.senders.append({"email": email, "password": password})
+            self.save_config()
+            self.refresh_senders_list()
+            popup.dismiss()
+
+        save_btn.bind(on_release=submit_and_close)
+        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
+
+        btn_row.add_widget(save_btn)
+        btn_row.add_widget(cancel_btn)
+        popup.open()
+
+    def delete_sender(self, idx):
+        try:
+            del self.senders[idx]
+            self.save_config()
+            self.refresh_senders_list()
+        except Exception:
+            pass
 
     def on_pause(self):
         return True
 
-    # ---------------- CONFIG ----------------
     def load_config(self):
         try:
             if os.path.exists(self.config_path):
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                self.sender_input.text = data.get("sender", "")
-                self.pass_input.text = data.get("app_password", "")
+
+                self.senders = data.get("senders", []) or []
                 self.recipient_input.text = data.get("recipient", "")
                 self.max_emails_input.text = str(data.get("max_emails", ""))
         except Exception:
-            pass
+            self.senders = []
 
     def save_config(self):
         try:
             os.makedirs(self.user_data_dir, exist_ok=True)
             data = {
-                "sender": self.sender_input.text.strip(),
-                "app_password": self.pass_input.text.strip(),
+                "senders": self.senders,
                 "recipient": self.recipient_input.text.strip(),
                 "max_emails": self.max_emails_input.text.strip(),
             }
@@ -265,7 +401,6 @@ class NewsApp(App):
     def on_stop(self):
         self.save_config()
 
-    # ---------------- UI HELPERS ----------------
     def set_status(self, text):
         self.status_label.text = text
 
@@ -277,7 +412,6 @@ class NewsApp(App):
         self.test_btn.disabled = not enabled
         self.send_btn.disabled = not enabled
 
-    # ---------------- ACTIONS ----------------
     def on_test_rss(self, *_):
         self.set_buttons_enabled(False)
         self.set_status("Testing RSS ...")
@@ -312,13 +446,14 @@ class NewsApp(App):
         self.run_in_thread(task)
 
     def on_send(self, *_):
-        sender = self.sender_input.text.strip()
-        app_pass = self.pass_input.text.strip()
         recipient_raw = self.recipient_input.text.strip()
         max_raw = self.max_emails_input.text.strip()
 
-        if not sender or not app_pass or not recipient_raw:
-            self.set_status("Please fill sender, app password, and recipient.")
+        if not self.senders:
+            self.set_status("Please add at least one sender.")
+            return
+        if not recipient_raw:
+            self.set_status("Please fill recipient.")
             return
 
         try:
@@ -335,12 +470,25 @@ class NewsApp(App):
                 news_items, total = collect_news_safe()
                 news_items = news_items[:max_emails]
 
-                ok, msg = send_emails_safe(sender, app_pass, to_emails, news_items)
+                sent_count = 0
+                last_msg = ""
 
-                if ok:
-                    out = f"{msg}\nSent items: {len(news_items)}"
+                for s in self.senders:
+                    sender_email = s.get("email", "").strip()
+                    app_pass = s.get("password", "").strip()
+                    if not sender_email or not app_pass:
+                        continue
+
+                    ok, msg = send_emails_safe(sender_email, app_pass, to_emails, news_items)
+                    last_msg = msg
+                    if ok:
+                        sent_count = len(news_items)
+                        break
+
+                if sent_count > 0:
+                    out = f"{last_msg}\nSent items: {sent_count}"
                 else:
-                    out = f"Send error:\n{msg}"
+                    out = f"Send error:\n{last_msg}"
 
                 Clock.schedule_once(
                     lambda dt: (
@@ -365,3 +513,4 @@ class NewsApp(App):
 
 if __name__ == "__main__":
     NewsApp().run()
+```0
