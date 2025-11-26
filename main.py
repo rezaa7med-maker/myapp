@@ -9,17 +9,16 @@ import base64
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
-from kivy.uix.widget import Widget
 from kivy.clock import Clock
 from kivy.core.window import Window
 
 
 # -------------------------------------------------------------------
 # Fix for libraries that still call base64.decodestring/encodestring
-# MUST be at top before anything uses base64 internally.
 # -------------------------------------------------------------------
 if not hasattr(base64, "decodestring"):
     base64.decodestring = base64.decodebytes
@@ -51,6 +50,30 @@ RSS_FEEDS = [
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Android) KivyApp/1.0"
 }
+
+
+# -------------------------------------------------------------------
+# SENT TITLES (no duplicates)
+# -------------------------------------------------------------------
+def load_sent_titles(path):
+    try:
+        if not os.path.exists(path):
+            return set()
+        with open(path, "r", encoding="utf-8") as f:
+            return set(line.strip() for line in f if line.strip())
+    except Exception:
+        return set()
+
+
+def append_sent_titles(path, titles):
+    if not titles:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            for t in titles:
+                f.write(t.replace("\n", " ").strip() + "\n")
+    except Exception:
+        pass
 
 
 # -------------------------------------------------------------------
@@ -139,6 +162,7 @@ class NewsApp(App):
         Window.clearcolor = (0, 0, 0, 1)
 
         self.config_path = os.path.join(self.user_data_dir, "config.json")
+        self.sent_path = os.path.join(self.user_data_dir, "sent_titles.txt")
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
@@ -150,13 +174,16 @@ class NewsApp(App):
         )
         root.add_widget(title)
 
-        content = BoxLayout(
-            orientation="vertical",
-            size_hint=(1, 1),
-            padding=10,
-            spacing=10
+        scroll = ScrollView(size_hint=(1, 1))
+        content = GridLayout(
+            cols=1,
+            size_hint_y=None,
+            padding=12,
+            spacing=12
         )
-        root.add_widget(content)
+        content.bind(minimum_height=content.setter("height"))
+        scroll.add_widget(content)
+        root.add_widget(scroll)
 
         def make_input(hint, password=False):
             ti = TextInput(
@@ -164,9 +191,9 @@ class NewsApp(App):
                 multiline=False,
                 password=password,
                 size_hint=(1, None),
-                height=54,
-                font_size="18sp",
-                padding=[10, 10, 10, 10]
+                height=68,               # bigger box
+                font_size="18sp",        # same font size
+                padding=[12, 14, 12, 14] # more internal space
             )
             ti.bind(text=lambda *_: self.save_config())
             return ti
@@ -176,8 +203,6 @@ class NewsApp(App):
         self.recipient_input = make_input("Recipient email (comma separated)")
         self.max_emails_input = make_input("Max emails (number)")
 
-        content.add_widget(Widget(size_hint=(1, 1)))
-
         content.add_widget(self.sender_input)
         content.add_widget(self.pass_input)
         content.add_widget(self.recipient_input)
@@ -186,11 +211,11 @@ class NewsApp(App):
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
-            height=56,
-            spacing=10
+            height=64,  # bigger buttons row
+            spacing=12
         )
-        self.test_btn = Button(text="Test RSS")
-        self.send_btn = Button(text="Send")
+        self.test_btn = Button(text="Test RSS", font_size="18sp")  # same font size
+        self.send_btn = Button(text="Send", font_size="18sp")      # same font size
         self.test_btn.bind(on_release=self.on_test_rss)
         self.send_btn.bind(on_release=self.on_send)
 
@@ -202,16 +227,12 @@ class NewsApp(App):
             text="Ready...",
             font_size="16sp",
             size_hint=(1, None),
-            height=220,
+            height=240,   # a bit taller status box
             halign="left",
             valign="top"
         )
         self.status_label.bind(size=self.status_label.setter("text_size"))
         content.add_widget(self.status_label)
-
-        content.add_widget(Widget(size_hint=(1, None), height=20))
-
-        content.add_widget(Widget(size_hint=(1, 1)))
 
         self.load_config()
         return root
@@ -292,17 +313,29 @@ class NewsApp(App):
             max_emails = 5
 
         to_emails = [x.strip() for x in recipient_raw.split(",") if x.strip()]
-        self.set_status("Sending...")
+        self.set_status("Sending (no duplicates)...")
 
         def task():
             try:
-                news_items, total = collect_news_safe()
-                news_items = news_items[:max_emails]
+                sent_titles = load_sent_titles(self.sent_path)
 
-                ok, msg = send_emails_safe(sender, app_pass, to_emails, news_items)
+                all_items, total = collect_news_safe()
+                new_items = [(t, s) for (t, s) in all_items if t not in sent_titles]
+
+                if not new_items:
+                    Clock.schedule_once(
+                        lambda dt: self.set_status("No new items to send."), 0
+                    )
+                    return
+
+                new_items = new_items[:max_emails]
+
+                ok, msg = send_emails_safe(sender, app_pass, to_emails, new_items)
 
                 if ok:
-                    out = f"{msg}\nSent items: {len(news_items)}"
+                    titles_just_sent = [t for (t, _) in new_items]
+                    append_sent_titles(self.sent_path, titles_just_sent)
+                    out = f"{msg}\nSent new items: {len(new_items)}"
                 else:
                     out = f"Send error:\n{msg}"
 
