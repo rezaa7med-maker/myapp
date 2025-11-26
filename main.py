@@ -5,21 +5,22 @@ import traceback
 import ssl
 import smtplib
 import base64
+import time
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.network.urlrequest import UrlRequest
+from kivy.metrics import dp
 
 
 # -------------------------------------------------------------------
 # Fix for libraries that still call base64.decodestring/encodestring
-# MUST be at top before anything uses base64 internally.
 # -------------------------------------------------------------------
 if not hasattr(base64, "decodestring"):
     base64.decodestring = base64.decodebytes
@@ -52,76 +53,62 @@ REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Android) KivyApp/1.0"
 }
 
+RSS_PER_FEED_TIMEOUT = (5, 8)
+RSS_TOTAL_TIMEOUT = 20
+
 
 # -------------------------------------------------------------------
 # HELPERS
 # -------------------------------------------------------------------
-def parse_feed_text(text, log_func=print):
+def collect_news_safe(log_func=print):
+    import requests
     import feedparser
 
     items = []
-    feed = feedparser.parse(text)
-    entries = getattr(feed, "entries", []) or []
-
-    for e in entries:
-        title = getattr(e, "title", "").strip()
-        summary = getattr(e, "summary", "").strip() or title
-        if title:
-            items.append((title, summary))
-
-    return items, len(entries)
-
-
-def collect_news_async(done_callback, log_func=print):
-    """
-    Collect RSS items asynchronously using UrlRequest
-    to avoid ANR/UI freezes on Android.
-
-    done_callback(items, total_entries)
-    """
-    items_all = []
     total_entries = 0
-    idx = 0
-    errors = []
+    lock = threading.Lock()
 
-    def fetch_next():
-        nonlocal idx
+    def fetch_one(url):
+        nonlocal total_entries
+        try:
+            kwargs = dict(headers=REQUEST_HEADERS, timeout=RSS_PER_FEED_TIMEOUT)
+            if CERT_PATH:
+                kwargs["verify"] = CERT_PATH
 
-        if idx >= len(RSS_FEEDS):
-            done_callback(items_all, total_entries, errors)
-            return
+            r = requests.get(url, **kwargs)
+            r.raise_for_status()
 
-        url = RSS_FEEDS[idx]
-        idx += 1
+            feed = feedparser.parse(r.text)
+            entries = getattr(feed, "entries", []) or []
 
-        def on_success(req, result):
-            nonlocal total_entries
-            try:
-                feed_items, n = parse_feed_text(result, log_func=log_func)
-                items_all.extend(feed_items)
-                total_entries += n
-            except Exception as e:
-                errors.append(f"Parse error for {url}: {e}")
-            fetch_next()
+            local_items = []
+            for e in entries:
+                title = getattr(e, "title", "").strip()
+                summary = getattr(e, "summary", "").strip() or title
+                if title:
+                    local_items.append((title, summary))
 
-        def on_error(req, error):
-            errors.append(f"RSS error for {url}: {error}")
-            fetch_next()
+            with lock:
+                total_entries += len(entries)
+                items.extend(local_items)
 
-        def on_failure(req, result):
-            errors.append(f"RSS failure for {url}: {result}")
-            fetch_next()
+        except Exception as e:
+            log_func(f"RSS error for {url}: {e}")
 
-        UrlRequest(
-            url,
-            on_success=on_success,
-            on_error=on_error,
-            on_failure=on_failure,
-            req_headers=REQUEST_HEADERS,
-            timeout=10
-        )
+    threads = []
+    for url in RSS_FEEDS:
+        t = threading.Thread(target=fetch_one, args=(url,), daemon=True)
+        threads.append(t)
+        t.start()
 
-    fetch_next()
+    start = time.time()
+    for t in threads:
+        remaining = RSS_TOTAL_TIMEOUT - (time.time() - start)
+        if remaining <= 0:
+            break
+        t.join(timeout=remaining)
+
+    return items, total_entries
 
 
 def send_emails_safe(sender_email, app_password, to_emails, news_items):
@@ -147,12 +134,7 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
                         "",
                         summary,
                     ])
-
-                    server.sendmail(
-                        sender_email,
-                        to_emails,
-                        msg.encode("utf-8"),
-                    )
+                    server.sendmail(sender_email, to_emails, msg.encode("utf-8"))
 
             return True, ("Sent with verified SSL"
                           if verified else
@@ -173,7 +155,6 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
 class NewsApp(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
-
         self.config_path = os.path.join(self.user_data_dir, "config.json")
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
@@ -182,17 +163,20 @@ class NewsApp(App):
             text="News Mailer (Safe Boot)",
             font_size="22sp",
             size_hint=(1, None),
-            height=50
+            height=dp(50)
         )
         root.add_widget(title)
 
+        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True)
         content = BoxLayout(
             orientation="vertical",
-            size_hint=(1, 1),
-            padding=10,
-            spacing=12
+            size_hint_y=None,
+            padding=dp(10),
+            spacing=dp(10)
         )
-        root.add_widget(content)
+        content.bind(minimum_height=content.setter("height"))
+        scroll.add_widget(content)
+        root.add_widget(scroll)
 
         def make_input(hint, password=False):
             ti = TextInput(
@@ -200,9 +184,9 @@ class NewsApp(App):
                 multiline=False,
                 password=password,
                 size_hint=(1, None),
-                height=160,                 # bigger box
-                font_size="18sp",          # same font size as before
-                padding=[14, 18, 14, 18]   # more inner space, font unchanged
+                height=dp(160),
+                font_size="18sp",
+                padding=[dp(10), dp(12), dp(10), dp(12)]
             )
             ti.bind(text=lambda *_: self.save_config())
             return ti
@@ -212,8 +196,6 @@ class NewsApp(App):
         self.recipient_input = make_input("Recipient email (comma separated)")
         self.max_emails_input = make_input("Max emails (number)")
 
-        content.add_widget(Widget(size_hint=(1, 1)))
-
         content.add_widget(self.sender_input)
         content.add_widget(self.pass_input)
         content.add_widget(self.recipient_input)
@@ -222,14 +204,13 @@ class NewsApp(App):
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
-            height=60,
-            spacing=10
+            height=dp(60),
+            spacing=dp(10)
         )
         self.test_btn = Button(text="Test RSS")
         self.send_btn = Button(text="Send")
         self.test_btn.bind(on_release=self.on_test_rss)
         self.send_btn.bind(on_release=self.on_send)
-
         btn_row.add_widget(self.test_btn)
         btn_row.add_widget(self.send_btn)
         content.add_widget(btn_row)
@@ -238,18 +219,21 @@ class NewsApp(App):
             text="Ready...",
             font_size="16sp",
             size_hint=(1, None),
-            height=240,
+            height=dp(220),
             halign="left",
             valign="top"
         )
         self.status_label.bind(size=self.status_label.setter("text_size"))
         content.add_widget(self.status_label)
 
-        content.add_widget(Widget(size_hint=(1, None), height=20))
-        content.add_widget(Widget(size_hint=(1, 1)))
+        # Spacer to keep ScrollView draggable even when content is short
+        content.add_widget(Widget(size_hint=(1, None), height=dp(260)))
 
         self.load_config()
         return root
+
+    def on_pause(self):
+        return True
 
     # ---------------- CONFIG ----------------
     def load_config(self):
@@ -289,26 +273,43 @@ class NewsApp(App):
         t = threading.Thread(target=func, daemon=True)
         t.start()
 
+    def set_buttons_enabled(self, enabled: bool):
+        self.test_btn.disabled = not enabled
+        self.send_btn.disabled = not enabled
+
     # ---------------- ACTIONS ----------------
     def on_test_rss(self, *_):
-        self.test_btn.disabled = True
+        self.set_buttons_enabled(False)
         self.set_status("Testing RSS ...")
 
-        def done(items, total, errors):
-            msg = f"RSS OK\nTotal entries: {total}\nCollected items: {len(items)}"
-            if errors:
-                msg += "\n\nErrors:\n" + "\n".join(errors[:5])
-            self.set_status(msg)
-            self.test_btn.disabled = False
+        def task():
+            start = time.time()
+            try:
+                items, total = collect_news_safe()
+                elapsed = time.time() - start
+                Clock.schedule_once(
+                    lambda dt: (
+                        self.set_status(
+                            f"RSS OK\n"
+                            f"Total entries: {total}\n"
+                            f"Collected items: {len(items)}\n"
+                            f"Elapsed: {elapsed:.1f}s"
+                        ),
+                        self.set_buttons_enabled(True)
+                    ),
+                    0
+                )
+            except Exception as e:
+                tb = traceback.format_exc()
+                Clock.schedule_once(
+                    lambda dt: (
+                        self.set_status(f"RSS Error:\n{e}\n\n{tb}"),
+                        self.set_buttons_enabled(True)
+                    ),
+                    0
+                )
 
-        try:
-            collect_news_async(lambda items, total, errors: Clock.schedule_once(
-                lambda dt: done(items, total, errors), 0
-            ))
-        except Exception as e:
-            tb = traceback.format_exc()
-            self.set_status(f"RSS Error:\n{e}\n\n{tb}")
-            self.test_btn.disabled = False
+        self.run_in_thread(task)
 
     def on_send(self, *_):
         sender = self.sender_input.text.strip()
@@ -326,36 +327,40 @@ class NewsApp(App):
             max_emails = 5
 
         to_emails = [x.strip() for x in recipient_raw.split(",") if x.strip()]
-        self.send_btn.disabled = True
-        self.set_status("Collecting RSS before sending...")
+        self.set_buttons_enabled(False)
+        self.set_status("Sending...")
 
-        def after_collect(items, total, errors):
-            items = items[:max_emails]
-            self.set_status("Sending...")
+        def task():
+            try:
+                news_items, total = collect_news_safe()
+                news_items = news_items[:max_emails]
 
-            def send_task():
-                try:
-                    ok, msg = send_emails_safe(sender, app_pass, to_emails, items)
-                    if ok:
-                        out = f"{msg}\nSent items: {len(items)}"
-                    else:
-                        out = f"Send error:\n{msg}"
-                    Clock.schedule_once(lambda dt: self._finish_send(out), 0)
-                except Exception as e:
-                    tb = traceback.format_exc()
-                    Clock.schedule_once(lambda dt: self._finish_send(
-                        f"Error:\n{e}\n\n{tb}"
-                    ), 0)
+                ok, msg = send_emails_safe(sender, app_pass, to_emails, news_items)
 
-            self.run_in_thread(send_task)
+                if ok:
+                    out = f"{msg}\nSent items: {len(news_items)}"
+                else:
+                    out = f"Send error:\n{msg}"
 
-        collect_news_async(lambda items, total, errors: Clock.schedule_once(
-            lambda dt: after_collect(items, total, errors), 0
-        ))
+                Clock.schedule_once(
+                    lambda dt: (
+                        self.set_status(out),
+                        self.set_buttons_enabled(True)
+                    ),
+                    0
+                )
 
-    def _finish_send(self, text):
-        self.set_status(text)
-        self.send_btn.disabled = False
+            except Exception as e:
+                tb = traceback.format_exc()
+                Clock.schedule_once(
+                    lambda dt: (
+                        self.set_status(f"Error:\n{e}\n\n{tb}"),
+                        self.set_buttons_enabled(True)
+                    ),
+                    0
+                )
+
+        self.run_in_thread(task)
 
 
 if __name__ == "__main__":
