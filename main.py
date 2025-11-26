@@ -178,8 +178,8 @@ class NewsApp(App):
         content = GridLayout(
             cols=1,
             size_hint_y=None,
-            padding=12,
-            spacing=12
+            padding=10,
+            spacing=10
         )
         content.bind(minimum_height=content.setter("height"))
         scroll.add_widget(content)
@@ -191,9 +191,9 @@ class NewsApp(App):
                 multiline=False,
                 password=password,
                 size_hint=(1, None),
-                height=68,               # bigger box
-                font_size="18sp",        # same font size
-                padding=[12, 14, 12, 14] # more internal space
+                height=54,
+                font_size="18sp",
+                padding=[10, 10, 10, 10]
             )
             ti.bind(text=lambda *_: self.save_config())
             return ti
@@ -211,11 +211,11 @@ class NewsApp(App):
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
-            height=64,  # bigger buttons row
-            spacing=12
+            height=56,
+            spacing=10
         )
-        self.test_btn = Button(text="Test RSS", font_size="18sp")  # same font size
-        self.send_btn = Button(text="Send", font_size="18sp")      # same font size
+        self.test_btn = Button(text="Test RSS")
+        self.send_btn = Button(text="Send")
         self.test_btn.bind(on_release=self.on_test_rss)
         self.send_btn.bind(on_release=self.on_send)
 
@@ -227,7 +227,7 @@ class NewsApp(App):
             text="Ready...",
             font_size="16sp",
             size_hint=(1, None),
-            height=240,   # a bit taller status box
+            height=220,
             halign="left",
             valign="top"
         )
