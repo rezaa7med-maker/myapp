@@ -227,7 +227,7 @@ class NewsApp(App):
         content.add_widget(self.status_label)
 
         # Spacer to keep ScrollView draggable even when content is short
-        content.add_widget(Widget(size_hint=(1, None), height=dp(180)))
+        content.add_widget(Widget(size_hint=(1, None), height=dp(100)))
 
         self.load_config()
         return root
