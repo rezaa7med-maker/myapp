@@ -20,6 +20,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.metrics import dp
+from kivy.graphics import Color, Line, Rectangle
 
 
 # -------------------------------------------------------------------
@@ -208,7 +209,7 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
 # UI ROW FOR SENDERS
 # -------------------------------------------------------------------
 class SenderRow(BoxLayout):
-    def __init__(self, text, on_edit, on_delete, **kwargs):
+    def __init__(self, text, on_delete, **kwargs):
         super().__init__(
             orientation="horizontal",
             size_hint_y=None,
@@ -221,7 +222,7 @@ class SenderRow(BoxLayout):
             text=text,
             halign="left",
             valign="middle",
-            size_hint_x=0.78,
+            size_hint_x=0.89,
             font_size="15sp",
         )
         self.lbl.bind(
@@ -230,14 +231,10 @@ class SenderRow(BoxLayout):
             )
         )
 
-        btn_edit = Button(text="✎", size_hint_x=0.11, font_size="14sp")
         btn_del = Button(text="×", size_hint_x=0.11, font_size="16sp")
-
-        btn_edit.bind(on_release=lambda *_: on_edit())
         btn_del.bind(on_release=lambda *_: on_delete())
 
         self.add_widget(self.lbl)
-        self.add_widget(btn_edit)
         self.add_widget(btn_del)
 
 
@@ -415,14 +412,30 @@ class NewsApp(App):
         header.add_widget(add_btn)
         box.add_widget(header)
 
-        self.senders_list_layout = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
+        self.senders_list_layout = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
         self.senders_list_layout.bind(
             minimum_height=self.senders_list_layout.setter("height")
         )
 
         list_scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         list_scroll.add_widget(self.senders_list_layout)
-        box.add_widget(list_scroll)
+
+        list_container = BoxLayout(size_hint=(1, 1), padding=dp(4))
+        with list_container.canvas.before:
+            Color(0.12, 0.12, 0.12, 1)
+            bg = Rectangle(pos=list_container.pos, size=list_container.size)
+        with list_container.canvas.after:
+            Color(0.5, 0.5, 0.5, 1)
+            border = Line(rectangle=(*list_container.pos, *list_container.size), width=1.2)
+
+        def upd(*_):
+            bg.pos = list_container.pos
+            bg.size = list_container.size
+            border.rectangle = (*list_container.pos, *list_container.size)
+
+        list_container.bind(pos=upd, size=upd)
+        list_container.add_widget(list_scroll)
+        box.add_widget(list_container)
 
         return box
 
@@ -432,7 +445,6 @@ class NewsApp(App):
             email = s.get("email", "")
             row = SenderRow(
                 text=email,
-                on_edit=lambda i=idx: self.show_sender_form_popup(i),
                 on_delete=lambda i=idx: self.show_delete_confirm(
                     lambda: self.delete_sender(i)
                 ),
@@ -722,7 +734,7 @@ class NewsApp(App):
                     f"Sent items total: {len(self.sent_titles)}\n"
                     f"New remaining: {remaining_after}\n\n"
                     + "\n".join(results)
-                    + "\n\nTotals:\n"
+                    + "\n\n"
                     + "\n".join(totals_lines)
                 )
 
@@ -749,4 +761,4 @@ class NewsApp(App):
 
 if __name__ == "__main__":
     NewsApp().run()
-
+```0
