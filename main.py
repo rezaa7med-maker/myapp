@@ -297,7 +297,8 @@ class NewsApp(App):
             decor = window.getDecorView()
 
             window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
-            decor.setSystemUiVisibility(0)
+            window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
         except Exception:
             pass
 
@@ -409,7 +410,7 @@ class NewsApp(App):
     def on_start(self):
         Window.fullscreen = False
         self._apply_system_ui()
-        Clock.schedule_interval(self._apply_system_ui, 0.3)
+        Clock.schedule_interval(self._apply_system_ui, 0.2)
         Window.bind(on_keyboard=self.on_keyboard)
         Window.bind(on_draw=self._apply_system_ui)
         Window.bind(on_resize=self._apply_system_ui)
