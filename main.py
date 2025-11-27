@@ -57,9 +57,8 @@ REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0 (Android) KivyApp/1.0"}
 RSS_PER_FEED_TIMEOUT = (5, 8)
 RSS_TOTAL_TIMEOUT = 20
 
-# Human-like delays (seconds)
-EMAIL_DELAY_RANGE = (2.5, 6.0)     # delay between emails
-SENDER_DELAY_RANGE = (3.0, 8.0)    # delay between senders
+EMAIL_DELAY_RANGE = (2.5, 6.0)
+SENDER_DELAY_RANGE = (3.0, 8.0)
 
 
 # -------------------------------------------------------------------
@@ -149,7 +148,7 @@ def collect_news_safe(log_func=print):
     return items, total_entries
 
 
-def send_emails_safe(sender_email, app_password, to_emails, news_items):
+def send_emails_safe(sender_email, app_password, to_emails, news_items, progress_cb=None):
     last_err = None
 
     for verified in (True, False):
@@ -167,7 +166,14 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
             ) as server:
                 server.login(sender_email, app_password)
 
+                total_n = len(news_items)
                 for i, (title, summary) in enumerate(news_items):
+                    if progress_cb:
+                        try:
+                            progress_cb(i + 1, total_n)
+                        except Exception:
+                            pass
+
                     msg = "\n".join(
                         [
                             f"To: {', '.join(to_emails)}",
@@ -180,7 +186,7 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
                         sender_email, to_emails, msg.encode("utf-8")
                     )
 
-                    if i < len(news_items) - 1:
+                    if i < total_n - 1:
                         time.sleep(random.uniform(*EMAIL_DELAY_RANGE))
 
             return True, (
@@ -664,6 +670,7 @@ class NewsApp(App):
 
                 results = []
                 success_count = 0
+                sent_per_sender = {}
 
                 for idx, s in enumerate(self.senders):
                     sender_email = s.get("email", "").strip()
@@ -671,17 +678,28 @@ class NewsApp(App):
 
                     if not sender_email or not app_pass:
                         results.append(f"{sender_email or 'Unknown'}: skipped (missing data)")
+                        sent_per_sender[sender_email or "Unknown"] = 0
                         continue
 
+                    def progress_cb(cur, tot, se=sender_email):
+                        Clock.schedule_once(
+                            lambda dt, _se=se, _c=cur, _t=tot: self.set_status(
+                                f"Sending...\n{_se}\nEmail {_c}/{_t}"
+                            ),
+                            0,
+                        )
+
                     ok, msg = send_emails_safe(
-                        sender_email, app_pass, to_emails, batch_items
+                        sender_email, app_pass, to_emails, batch_items, progress_cb=progress_cb
                     )
 
                     if ok:
                         success_count += 1
                         results.append(f"{sender_email}: OK ({len(batch_items)} items)")
+                        sent_per_sender[sender_email] = len(batch_items)
                     else:
                         results.append(f"{sender_email}: FAIL ({msg})")
+                        sent_per_sender[sender_email] = 0
 
                     if idx < len(self.senders) - 1:
                         time.sleep(random.uniform(*SENDER_DELAY_RANGE))
@@ -693,6 +711,10 @@ class NewsApp(App):
 
                 remaining_after = len([t for t, _ in new_items if t not in set(t for t, _ in batch_items)])
 
+                totals_lines = []
+                for email, cnt in sent_per_sender.items():
+                    totals_lines.append(f"{email}: {cnt} sent")
+
                 out = (
                     "Finished.\n"
                     f"Batch sent: {len(batch_items)}\n"
@@ -700,6 +722,8 @@ class NewsApp(App):
                     f"Sent items total: {len(self.sent_titles)}\n"
                     f"New remaining: {remaining_after}\n\n"
                     + "\n".join(results)
+                    + "\n\nTotals:\n"
+                    + "\n".join(totals_lines)
                 )
 
                 Clock.schedule_once(
@@ -725,4 +749,4 @@ class NewsApp(App):
 
 if __name__ == "__main__":
     NewsApp().run()
-
+```0
