@@ -584,75 +584,86 @@ class NewsApp(App):
         self.run_in_thread(task)
 
     def on_send(self, *_):
-        recipient_raw = self.recipient_input.text.strip()
-        max_raw = self.max_emails_input.text.strip()
+    recipient_raw = self.recipient_input.text.strip()
+    max_raw = self.max_emails_input.text.strip()
 
-        if not self.senders:
-            self.set_status("Please add at least one sender.")
-            return
-        if not recipient_raw:
-            self.set_status("Please fill recipient.")
-            return
+    if not self.senders:
+        self.set_status("Please add at least one sender.")
+        return
+    if not recipient_raw:
+        self.set_status("Please fill recipient.")
+        return
 
+    try:
+        max_emails = int(max_raw) if max_raw else 5
+    except ValueError:
+        max_emails = 5
+
+    to_emails = [x.strip() for x in recipient_raw.split(",") if x.strip()]
+    self.set_buttons_enabled(False)
+    self.set_status("Sending...")
+
+    def task():
         try:
-            max_emails = int(max_raw) if max_raw else 5
-        except ValueError:
-            max_emails = 5
+            news_items, total = collect_news_safe()
+            news_items = news_items[:max_emails]
 
-        to_emails = [
-            x.strip() for x in recipient_raw.split(",") if x.strip()
-        ]
-        self.set_buttons_enabled(False)
-        self.set_status("Sending...")
+            if not news_items:
+                Clock.schedule_once(
+                    lambda dt: (
+                        self.set_status("No news items collected."),
+                        self.set_buttons_enabled(True)
+                    ),
+                    0
+                )
+                return
 
-        def task():
-            try:
-                news_items, total = collect_news_safe()
-                news_items = news_items[:max_emails]
+            results = []
+            success_count = 0
 
-                sent_count = 0
-                last_msg = "No sender worked."
+            for s in self.senders:
+                sender_email = s.get("email", "").strip()
+                app_pass = s.get("password", "").strip()
 
-                for s in self.senders:
-                    sender_email = s.get("email", "").strip()
-                    app_pass = s.get("password", "").strip()
-                    if not sender_email or not app_pass:
-                        continue
+                if not sender_email or not app_pass:
+                    results.append(f"{sender_email or 'Unknown'}: skipped (missing data)")
+                    continue
 
-                    ok, msg = send_emails_safe(
-                        sender_email, app_pass, to_emails, news_items
-                    )
-                    last_msg = msg
-                    if ok:
-                        sent_count = len(news_items)
-                        break
+                ok, msg = send_emails_safe(
+                    sender_email, app_pass, to_emails, news_items
+                )
 
-                if sent_count > 0:
-                    out = f"{last_msg}\nSent items: {sent_count}"
+                if ok:
+                    success_count += 1
+                    results.append(f"{sender_email}: OK ({len(news_items)} items)")
                 else:
-                    out = f"Send error:\n{last_msg}"
+                    results.append(f"{sender_email}: FAIL ({msg})")
 
-                Clock.schedule_once(
-                    lambda dt: (
-                        self.set_status(out),
-                        self.set_buttons_enabled(True),
-                    ),
-                    0,
-                )
+            out = (
+                f"Finished.\n"
+                f"Successful senders: {success_count}/{len(self.senders)}\n\n" +
+                "\n".join(results)
+            )
 
-            except Exception as e:
-                tb = traceback.format_exc()
-                Clock.schedule_once(
-                    lambda dt: (
-                        self.set_status(
-                            f"Error:\n{e}\n\n{tb}"
-                        ),
-                        self.set_buttons_enabled(True),
-                    ),
-                    0,
-                )
+            Clock.schedule_once(
+                lambda dt: (
+                    self.set_status(out),
+                    self.set_buttons_enabled(True)
+                ),
+                0
+            )
 
-        self.run_in_thread(task)
+        except Exception as e:
+            tb = traceback.format_exc()
+            Clock.schedule_once(
+                lambda dt: (
+                    self.set_status(f"Error:\n{e}\n\n{tb}"),
+                    self.set_buttons_enabled(True)
+                ),
+                0
+            )
+
+    self.run_in_thread(task)
 
 
 if __name__ == "__main__":
