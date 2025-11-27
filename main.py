@@ -286,6 +286,21 @@ class RecipientRow(BoxLayout):
 # MAIN APP
 # -------------------------------------------------------------------
 class NewsApp(App):
+    def _apply_system_ui(self, *_):
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            View = autoclass("android.view.View")
+            LayoutParams = autoclass("android.view.WindowManager$LayoutParams")
+            activity = PythonActivity.mActivity
+            window = activity.getWindow()
+            decor = window.getDecorView()
+
+            window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
+            decor.setSystemUiVisibility(0)
+        except Exception:
+            pass
+
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
         Window.fullscreen = False
@@ -393,33 +408,16 @@ class NewsApp(App):
 
     def on_start(self):
         Window.fullscreen = False
-
-        def show_bars(*_):
-            try:
-                from jnius import autoclass
-                PythonActivity = autoclass("org.kivy.android.PythonActivity")
-                View = autoclass("android.view.View")
-                activity = PythonActivity.mActivity
-                decor = activity.getWindow().getDecorView()
-                decor.setSystemUiVisibility(0)
-            except Exception:
-                pass
-
-        show_bars()
-        Clock.schedule_interval(show_bars, 0.5)
-
+        self._apply_system_ui()
+        Clock.schedule_interval(self._apply_system_ui, 0.3)
         Window.bind(on_keyboard=self.on_keyboard)
+        Window.bind(on_draw=self._apply_system_ui)
+        Window.bind(on_resize=self._apply_system_ui)
+        Window.bind(on_focus=self._apply_system_ui)
 
     def on_resume(self):
-        try:
-            from jnius import autoclass
-            PythonActivity = autoclass("org.kivy.android.PythonActivity")
-            View = autoclass("android.view.View")
-            activity = PythonActivity.mActivity
-            decor = activity.getWindow().getDecorView()
-            decor.setSystemUiVisibility(0)
-        except Exception:
-            pass
+        Window.fullscreen = False
+        self._apply_system_ui()
         return True
 
     def on_keyboard(self, window, key, scancode, codepoint, modifier):
