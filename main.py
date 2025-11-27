@@ -62,10 +62,10 @@ EMAIL_DELAY_RANGE = (2.5, 6.0)
 SENDER_DELAY_RANGE = (3.0, 8.0)
 
 LIGHT_BLUE = (0.3, 0.65, 1.0, 1.0)
-LIGHT_GREEN = (0.0, 0.5, 0.0, 1.0)
+LIGHT_GREEN = (0.0, 0.8, 0.0, 1.0)
 LIGHT_PURPLE = (0.75, 0.45, 1.0, 1.0)
 CREAM_WHITE = (0.96, 0.96, 0.88, 1.0)
-NORMAL_GREEN = (0.0, 0.5, 0.0, 1.0)
+NORMAL_GREEN = (0.0, 0.8, 0.0, 1.0)
 RED = (1.0, 0.4, 0.4, 1.0)
 
 
@@ -377,7 +377,7 @@ class NewsApp(App):
             title="Exit?",
             message="Exit?",
             yes_text="Yes, I'm sure",
-            no_text="No",
+            no_text="Cancel",
             on_yes=self.stop,
         )
 
@@ -386,7 +386,7 @@ class NewsApp(App):
             title="Delete?",
             message="Delete?",
             yes_text="Yes, I'm sure",
-            no_text="No",
+            no_text="Cancel",
             on_yes=on_yes,
         )
 
@@ -621,7 +621,7 @@ class NewsApp(App):
             spacing=dp(8),
         )
         save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
-        cancel_btn = Button(text="No", background_normal="", background_color=RED)
+        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED)
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
@@ -687,7 +687,7 @@ class NewsApp(App):
             spacing=dp(8),
         )
         save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
-        cancel_btn = Button(text="No", background_normal="", background_color=RED)
+        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED)
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
@@ -750,7 +750,7 @@ class NewsApp(App):
             spacing=dp(8),
         )
         save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
-        cancel_btn = Button(text="No", background_normal="", background_color=RED)
+        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED)
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
