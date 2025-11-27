@@ -282,6 +282,7 @@ class NewsApp(App):
         self.senders = []
         self.recipients = []
         self.sent_titles = set()
+        self.max_emails_value = 5
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
@@ -314,8 +315,14 @@ class NewsApp(App):
         self.recipients_box = self.build_recipients_box()
         content.add_widget(self.recipients_box)
 
-        self.max_emails_input = make_input("Max emails (number)")
-        content.add_widget(self.max_emails_input)
+        self.max_emails_btn = Button(
+            text=f"Max emails: {self.max_emails_value}",
+            size_hint=(1, None),
+            height=dp(60),
+            font_size="16sp",
+        )
+        self.max_emails_btn.bind(on_release=lambda *_: self.show_max_emails_popup())
+        content.add_widget(self.max_emails_btn)
 
         btn_row = BoxLayout(
             orientation="horizontal",
@@ -699,6 +706,68 @@ class NewsApp(App):
         cancel_btn.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
 
+    def show_max_emails_popup(self):
+        wrapper = BoxLayout(
+            orientation="vertical",
+            spacing=dp(10),
+            padding=dp(12),
+        )
+
+        wrapper.add_widget(
+            Label(
+                text="Max emails",
+                size_hint_y=None,
+                height=dp(28),
+                halign="left",
+                valign="middle",
+            )
+        )
+        num_input = TextInput(
+            text=str(self.max_emails_value),
+            multiline=False,
+            input_filter="int",
+            size_hint_y=None,
+            height=dp(54),
+            font_size="16sp",
+            padding=[dp(8), dp(10), dp(8), dp(10)],
+        )
+        wrapper.add_widget(num_input)
+
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(48),
+            spacing=dp(8),
+        )
+        save_btn = Button(text="Save")
+        cancel_btn = Button(text="No")
+        btn_row.add_widget(save_btn)
+        btn_row.add_widget(cancel_btn)
+        wrapper.add_widget(btn_row)
+
+        popup = Popup(
+            title="Set Max Emails",
+            content=wrapper,
+            size_hint=(0.92, None),
+            height=dp(240),
+            auto_dismiss=False,
+        )
+
+        def submit_and_close(*_):
+            raw = num_input.text.strip()
+            try:
+                val = int(raw) if raw else 5
+            except ValueError:
+                val = 5
+            self.max_emails_value = val
+            self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
+            self.save_config()
+            popup.dismiss()
+
+        save_btn.bind(on_release=submit_and_close)
+        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
+        popup.open()
+
     def delete_sender(self, idx):
         try:
             del self.senders[idx]
@@ -727,10 +796,17 @@ class NewsApp(App):
 
                 self.senders = data.get("senders", []) or []
                 self.recipients = data.get("recipients", []) or []
-                self.max_emails_input.text = str(data.get("max_emails", ""))
+                mr = data.get("max_emails", "")
+                try:
+                    self.max_emails_value = int(mr) if str(mr).strip() else 5
+                except ValueError:
+                    self.max_emails_value = 5
+                self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
         except Exception:
             self.senders = []
             self.recipients = []
+            self.max_emails_value = 5
+            self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
 
     def save_config(self):
         try:
@@ -738,7 +814,7 @@ class NewsApp(App):
             data = {
                 "senders": self.senders,
                 "recipients": self.recipients,
-                "max_emails": self.max_emails_input.text.strip(),
+                "max_emails": str(self.max_emails_value),
             }
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -807,8 +883,6 @@ class NewsApp(App):
         self.run_in_thread(task)
 
     def on_send(self, *_):
-        max_raw = self.max_emails_input.text.strip()
-
         if not self.senders:
             self.set_status("Please add at least one sender.")
             return
@@ -816,10 +890,7 @@ class NewsApp(App):
             self.set_status("Please add at least one recipient.")
             return
 
-        try:
-            max_emails = int(max_raw) if max_raw else 5
-        except ValueError:
-            max_emails = 5
+        max_emails = self.max_emails_value or 5
 
         to_emails = [x.strip() for x in self.recipients if str(x).strip()]
         self.set_buttons_enabled(False)
