@@ -387,6 +387,16 @@ class NewsApp(App):
         return root
 
     def on_start(self):
+        Window.fullscreen = False
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            View = autoclass("android.view.View")
+            activity = PythonActivity.mActivity
+            decor = activity.getWindow().getDecorView()
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
+        except Exception:
+            pass
         Window.bind(on_keyboard=self.on_keyboard)
 
     def on_keyboard(self, window, key, scancode, codepoint, modifier):
