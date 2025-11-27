@@ -68,6 +68,8 @@ CREAM_WHITE = (0.96, 0.96, 0.88, 1.0)
 NORMAL_GREEN = (0.0, 0.8, 0.0, 1.0)
 RED = (1.0, 0.4, 0.4, 1.0)
 
+BTN_HEIGHT = dp(46)
+
 
 # -------------------------------------------------------------------
 # SENT TITLES HELPERS
@@ -293,6 +295,23 @@ class NewsApp(App):
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
+        top_bar = BoxLayout(
+            orientation="horizontal",
+            size_hint=(1, None),
+            height=BTN_HEIGHT,
+        )
+        menu_btn = Button(
+            text="≡",
+            size_hint=(None, None),
+            width=BTN_HEIGHT,
+            height=BTN_HEIGHT,
+            font_size="18sp",
+        )
+        menu_btn.bind(on_release=lambda *_: self.show_menu_popup())
+        top_bar.add_widget(menu_btn)
+        top_bar.add_widget(Widget())
+        root.add_widget(top_bar)
+
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True)
         content = BoxLayout(
             orientation="vertical",
@@ -313,7 +332,7 @@ class NewsApp(App):
         self.max_emails_btn = Button(
             text=f"Max emails: {self.max_emails_value}",
             size_hint=(1, None),
-            height=dp(60),
+            height=BTN_HEIGHT,
             font_size="16sp",
             background_normal="",
             background_color=CREAM_WHITE,
@@ -325,7 +344,7 @@ class NewsApp(App):
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
-            height=dp(60),
+            height=BTN_HEIGHT,
             spacing=dp(10),
         )
         self.test_btn = Button(
@@ -372,6 +391,21 @@ class NewsApp(App):
             return True
         return False
 
+    def show_menu_popup(self):
+        wrapper = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
+        exit_btn = Button(text="Exit", size_hint_y=None, height=BTN_HEIGHT)
+        wrapper.add_widget(exit_btn)
+
+        popup = Popup(
+            title="Menu",
+            content=wrapper,
+            size_hint=(0.6, None),
+            height=dp(140),
+            auto_dismiss=True,
+        )
+        exit_btn.bind(on_release=lambda *_: (popup.dismiss(), self.stop()))
+        popup.open()
+
     def show_exit_confirm(self):
         self.show_confirm(
             title="Exit?",
@@ -379,6 +413,15 @@ class NewsApp(App):
             yes_text="Yes, I'm sure",
             no_text="Cancel",
             on_yes=self.stop,
+        )
+
+    def show_send_confirm(self):
+        self.show_confirm(
+            title="Send?",
+            message="Send?",
+            yes_text="Yes, I'm sure",
+            no_text="Cancel",
+            on_yes=self.do_send,
         )
 
     def show_delete_confirm(self, on_yes):
@@ -429,7 +472,7 @@ class NewsApp(App):
         header = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(40),
+            height=BTN_HEIGHT,
             spacing=dp(6),
         )
         header.add_widget(
@@ -442,8 +485,9 @@ class NewsApp(App):
         )
         add_btn = Button(
             text="Add Sender",
-            size_hint=(None, 1),
+            size_hint=(None, None),
             width=dp(140),
+            height=BTN_HEIGHT,
             font_size="14sp",
             background_normal="",
             background_color=LIGHT_BLUE,
@@ -491,7 +535,7 @@ class NewsApp(App):
         header = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(40),
+            height=BTN_HEIGHT,
             spacing=dp(6),
         )
         header.add_widget(
@@ -504,8 +548,9 @@ class NewsApp(App):
         )
         add_btn = Button(
             text="Add Recipient",
-            size_hint=(None, 1),
+            size_hint=(None, None),
             width=dp(140),
+            height=BTN_HEIGHT,
             font_size="14sp",
             background_normal="",
             background_color=LIGHT_BLUE,
@@ -896,6 +941,9 @@ class NewsApp(App):
         self.run_in_thread(task)
 
     def on_send(self, *_):
+        self.show_send_confirm()
+
+    def do_send(self):
         if not self.senders:
             self.set_status("Please add at least one sender.")
             return
