@@ -297,18 +297,6 @@ class NewsApp(App):
         scroll.add_widget(content)
         root.add_widget(scroll)
 
-        def make_input(hint):
-            ti = TextInput(
-                hint_text=hint,
-                multiline=False,
-                size_hint=(1, None),
-                height=dp(90),
-                font_size="18sp",
-                padding=[dp(10), dp(12), dp(10), dp(12)],
-            )
-            ti.bind(text=lambda *_: self.save_config())
-            return ti
-
         self.senders_box = self.build_senders_box()
         content.add_widget(self.senders_box)
 
@@ -760,7 +748,8 @@ class NewsApp(App):
             except ValueError:
                 val = 5
             self.max_emails_value = val
-            self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
+            if hasattr(self, "max_emails_btn"):
+                self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
             self.save_config()
             popup.dismiss()
 
@@ -801,12 +790,14 @@ class NewsApp(App):
                     self.max_emails_value = int(mr) if str(mr).strip() else 5
                 except ValueError:
                     self.max_emails_value = 5
-                self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
+                if hasattr(self, "max_emails_btn"):
+                    self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
         except Exception:
             self.senders = []
             self.recipients = []
             self.max_emails_value = 5
-            self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
+            if hasattr(self, "max_emails_btn"):
+                self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
 
     def save_config(self):
         try:
