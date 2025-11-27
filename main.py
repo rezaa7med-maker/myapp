@@ -61,6 +61,13 @@ RSS_TOTAL_TIMEOUT = 20
 EMAIL_DELAY_RANGE = (2.5, 6.0)
 SENDER_DELAY_RANGE = (3.0, 8.0)
 
+LIGHT_BLUE = (0.3, 0.65, 1.0, 1.0)
+LIGHT_GREEN = (0.35, 1.0, 0.45, 1.0)
+LIGHT_PURPLE = (0.75, 0.45, 1.0, 1.0)
+CREAM_WHITE = (0.96, 0.96, 0.88, 1.0)
+NORMAL_GREEN = (0.0, 0.8, 0.0, 1.0)
+RED = (1.0, 0.0, 0.0, 1.0)
+
 
 # -------------------------------------------------------------------
 # SENT TITLES HELPERS
@@ -308,6 +315,9 @@ class NewsApp(App):
             size_hint=(1, None),
             height=dp(60),
             font_size="16sp",
+            background_normal="",
+            background_color=CREAM_WHITE,
+            color=(0, 0, 0, 1),
         )
         self.max_emails_btn.bind(on_release=lambda *_: self.show_max_emails_popup())
         content.add_widget(self.max_emails_btn)
@@ -318,8 +328,16 @@ class NewsApp(App):
             height=dp(60),
             spacing=dp(10),
         )
-        self.test_btn = Button(text="Test RSS")
-        self.send_btn = Button(text="Send")
+        self.test_btn = Button(
+            text="Test RSS",
+            background_normal="",
+            background_color=LIGHT_PURPLE,
+        )
+        self.send_btn = Button(
+            text="Send",
+            background_normal="",
+            background_color=LIGHT_GREEN,
+        )
         self.test_btn.bind(on_release=self.on_test_rss)
         self.send_btn.bind(on_release=self.on_send)
         btn_row.add_widget(self.test_btn)
@@ -382,8 +400,8 @@ class NewsApp(App):
             height=dp(44),
             spacing=dp(6),
         )
-        yes_btn = Button(text=yes_text)
-        no_btn = Button(text=no_text)
+        yes_btn = Button(text=yes_text, background_normal="", background_color=NORMAL_GREEN)
+        no_btn = Button(text=no_text, background_normal="", background_color=RED)
         btns.add_widget(yes_btn)
         btns.add_widget(no_btn)
         content.add_widget(btns)
@@ -427,6 +445,8 @@ class NewsApp(App):
             size_hint=(None, 1),
             width=dp(140),
             font_size="14sp",
+            background_normal="",
+            background_color=LIGHT_BLUE,
         )
         add_btn.bind(on_release=lambda *_: self.show_sender_form_popup())
         header.add_widget(add_btn)
@@ -487,6 +507,8 @@ class NewsApp(App):
             size_hint=(None, 1),
             width=dp(140),
             font_size="14sp",
+            background_normal="",
+            background_color=LIGHT_BLUE,
         )
         add_btn.bind(on_release=lambda *_: self.show_recipient_form_popup())
         header.add_widget(add_btn)
@@ -598,8 +620,8 @@ class NewsApp(App):
             height=dp(48),
             spacing=dp(8),
         )
-        save_btn = Button(text="Save")
-        cancel_btn = Button(text="No")
+        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
+        cancel_btn = Button(text="No", background_normal="", background_color=RED)
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
@@ -664,8 +686,8 @@ class NewsApp(App):
             height=dp(48),
             spacing=dp(8),
         )
-        save_btn = Button(text="Save")
-        cancel_btn = Button(text="No")
+        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
+        cancel_btn = Button(text="No", background_normal="", background_color=RED)
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
@@ -727,8 +749,8 @@ class NewsApp(App):
             height=dp(48),
             spacing=dp(8),
         )
-        save_btn = Button(text="Save")
-        cancel_btn = Button(text="No")
+        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
+        cancel_btn = Button(text="No", background_normal="", background_color=RED)
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
