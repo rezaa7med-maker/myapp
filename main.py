@@ -301,11 +301,11 @@ class NewsApp(App):
             height=BTN_HEIGHT,
         )
         menu_btn = Button(
-            text="☰",
+            text="●●●",
             size_hint=(None, None),
             width=BTN_HEIGHT,
             height=BTN_HEIGHT,
-            font_size="16sp",
+            font_size="14sp",
         )
         menu_btn.bind(on_release=lambda *_: self.show_menu_popup())
         top_bar.add_widget(menu_btn)
