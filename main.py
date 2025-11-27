@@ -8,6 +8,11 @@ import base64
 import time
 import random
 
+from kivy.config import Config
+Config.set("graphics", "fullscreen", "0")
+Config.set("graphics", "borderless", "0")
+Config.set("graphics", "resizable", "1")
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
@@ -388,15 +393,22 @@ class NewsApp(App):
 
     def on_start(self):
         Window.fullscreen = False
-        try:
-            from jnius import autoclass
-            PythonActivity = autoclass("org.kivy.android.PythonActivity")
-            View = autoclass("android.view.View")
-            activity = PythonActivity.mActivity
-            decor = activity.getWindow().getDecorView()
-            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
-        except Exception:
-            pass
+
+        def show_bars(*_):
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                View = autoclass("android.view.View")
+                activity = PythonActivity.mActivity
+                decor = activity.getWindow().getDecorView()
+                decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
+            except Exception:
+                pass
+
+        Clock.schedule_once(show_bars, 0)
+        Clock.schedule_once(show_bars, 0.5)
+        Clock.schedule_once(show_bars, 1.0)
+
         Window.bind(on_keyboard=self.on_keyboard)
 
     def on_keyboard(self, window, key, scancode, codepoint, modifier):
