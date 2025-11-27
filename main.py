@@ -301,7 +301,7 @@ class NewsApp(App):
             height=BTN_HEIGHT,
         )
         menu_btn = Button(
-            text="menu",
+            text="MENU",
             size_hint=(None, None),
             width=BTN_HEIGHT,
             height=BTN_HEIGHT,
