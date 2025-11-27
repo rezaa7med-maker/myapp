@@ -291,7 +291,7 @@ class NewsApp(App):
         self.senders = []
         self.recipients = []
         self.sent_titles = set()
-        self.max_emails_value = 5
+        self.max_emails_value = 20
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
@@ -825,9 +825,9 @@ class NewsApp(App):
         def submit_and_close(*_):
             raw = num_input.text.strip()
             try:
-                val = int(raw) if raw else 5
+                val = int(raw) if raw else 20
             except ValueError:
-                val = 5
+                val = 20
             self.max_emails_value = val
             if hasattr(self, "max_emails_btn"):
                 self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
@@ -868,15 +868,15 @@ class NewsApp(App):
                 self.recipients = data.get("recipients", []) or []
                 mr = data.get("max_emails", "")
                 try:
-                    self.max_emails_value = int(mr) if str(mr).strip() else 5
+                    self.max_emails_value = int(mr) if str(mr).strip() else 20
                 except ValueError:
-                    self.max_emails_value = 5
+                    self.max_emails_value = 20
                 if hasattr(self, "max_emails_btn"):
                     self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
         except Exception:
             self.senders = []
             self.recipients = []
-            self.max_emails_value = 5
+            self.max_emails_value = 20
             if hasattr(self, "max_emails_btn"):
                 self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
 
@@ -964,7 +964,7 @@ class NewsApp(App):
             self.set_status("Please add at least one recipient.")
             return
 
-        max_emails = self.max_emails_value or 5
+        max_emails = self.max_emails_value or 20
 
         to_emails = [x.strip() for x in self.recipients if str(x).strip()]
         self.set_buttons_enabled(False)
@@ -1041,8 +1041,8 @@ class NewsApp(App):
                     "Finished.\n"
                     f"Batch sent: {len(batch_items)}\n"
                     f"Successful senders: {success_count}/{len(self.senders)}\n"
-                    f"Sent items total: {len(self.sent_titles)}\n"
-                    f"New remaining: {remaining_after}\n\n"
+                    f"Sent feeds total: {len(self.sent_titles)}\n"
+                    f"Remaining feeds total: {remaining_after}\n\n"
                     + "\n".join(results)
                 )
 
