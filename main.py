@@ -401,15 +401,26 @@ class NewsApp(App):
                 View = autoclass("android.view.View")
                 activity = PythonActivity.mActivity
                 decor = activity.getWindow().getDecorView()
-                decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
+                decor.setSystemUiVisibility(0)
             except Exception:
                 pass
 
-        Clock.schedule_once(show_bars, 0)
-        Clock.schedule_once(show_bars, 0.5)
-        Clock.schedule_once(show_bars, 1.0)
+        show_bars()
+        Clock.schedule_interval(show_bars, 0.5)
 
         Window.bind(on_keyboard=self.on_keyboard)
+
+    def on_resume(self):
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            View = autoclass("android.view.View")
+            activity = PythonActivity.mActivity
+            decor = activity.getWindow().getDecorView()
+            decor.setSystemUiVisibility(0)
+        except Exception:
+            pass
+        return True
 
     def on_keyboard(self, window, key, scancode, codepoint, modifier):
         if key == 27:
