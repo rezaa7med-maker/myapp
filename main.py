@@ -6,6 +6,7 @@ import ssl
 import smtplib
 import base64
 import time
+import random
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -55,6 +56,10 @@ REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0 (Android) KivyApp/1.0"}
 
 RSS_PER_FEED_TIMEOUT = (5, 8)
 RSS_TOTAL_TIMEOUT = 20
+
+# Human-like delays (seconds)
+EMAIL_DELAY_RANGE = (2.5, 6.0)     # delay between emails
+SENDER_DELAY_RANGE = (3.0, 8.0)    # delay between senders
 
 
 # -------------------------------------------------------------------
@@ -129,7 +134,7 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
             ) as server:
                 server.login(sender_email, app_password)
 
-                for title, summary in news_items:
+                for i, (title, summary) in enumerate(news_items):
                     msg = "\n".join(
                         [
                             f"To: {', '.join(to_emails)}",
@@ -141,6 +146,10 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
                     server.sendmail(
                         sender_email, to_emails, msg.encode("utf-8")
                     )
+
+                    # Human-like delay after each email (except maybe last)
+                    if i < len(news_items) - 1:
+                        time.sleep(random.uniform(*EMAIL_DELAY_RANGE))
 
             return True, (
                 "Sent with verified SSL"
@@ -238,17 +247,14 @@ class NewsApp(App):
             ti.bind(text=lambda *_: self.save_config())
             return ti
 
-        # Senders list box
         self.senders_box = self.build_senders_box()
         content.add_widget(self.senders_box)
 
-        # Other inputs
         self.recipient_input = make_input("Recipient email (comma separated)")
         self.max_emails_input = make_input("Max emails (number)")
         content.add_widget(self.recipient_input)
         content.add_widget(self.max_emails_input)
 
-        # Buttons
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
@@ -263,7 +269,6 @@ class NewsApp(App):
         btn_row.add_widget(self.send_btn)
         content.add_widget(btn_row)
 
-        # Status
         self.status_label = Label(
             text="Ready...",
             font_size="16sp",
@@ -602,15 +607,12 @@ class NewsApp(App):
                 results = []
                 success_count = 0
 
-                # Every sender does the same send job
-                for s in self.senders:
+                for idx, s in enumerate(self.senders):
                     sender_email = s.get("email", "").strip()
                     app_pass = s.get("password", "").strip()
 
                     if not sender_email or not app_pass:
-                        results.append(
-                            f"{sender_email or 'Unknown'}: skipped (missing data)"
-                        )
+                        results.append(f"{sender_email or 'Unknown'}: skipped (missing data)")
                         continue
 
                     ok, msg = send_emails_safe(
@@ -622,6 +624,10 @@ class NewsApp(App):
                         results.append(f"{sender_email}: OK ({len(news_items)} items)")
                     else:
                         results.append(f"{sender_email}: FAIL ({msg})")
+
+                    # Human-like delay between senders
+                    if idx < len(self.senders) - 1:
+                        time.sleep(random.uniform(*SENDER_DELAY_RANGE))
 
                 out = (
                     "Finished.\n"
