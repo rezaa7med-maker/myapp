@@ -206,9 +206,39 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
 
 
 # -------------------------------------------------------------------
-# UI ROW FOR SENDERS
+# UI ROW FOR SENDERS / RECIPIENTS
 # -------------------------------------------------------------------
 class SenderRow(BoxLayout):
+    def __init__(self, text, on_delete, **kwargs):
+        super().__init__(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(46),
+            spacing=dp(6),
+            **kwargs,
+        )
+
+        self.lbl = Label(
+            text=text,
+            halign="left",
+            valign="middle",
+            size_hint_x=0.89,
+            font_size="15sp",
+        )
+        self.lbl.bind(
+            size=lambda inst, *_: setattr(
+                inst, "text_size", (inst.width, None)
+            )
+        )
+
+        btn_del = Button(text="×", size_hint_x=0.11, font_size="16sp")
+        btn_del.bind(on_release=lambda *_: on_delete())
+
+        self.add_widget(self.lbl)
+        self.add_widget(btn_del)
+
+
+class RecipientRow(BoxLayout):
     def __init__(self, text, on_delete, **kwargs):
         super().__init__(
             orientation="horizontal",
@@ -250,17 +280,10 @@ class NewsApp(App):
         self.sent_titles_path = os.path.join(self.user_data_dir, "sent_titles.txt")
 
         self.senders = []
+        self.recipients = []
         self.sent_titles = set()
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
-
-        title = Label(
-            text="News Mailer (Safe Boot)",
-            font_size="22sp",
-            size_hint=(1, None),
-            height=dp(50),
-        )
-        root.add_widget(title)
 
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True)
         content = BoxLayout(
@@ -288,9 +311,10 @@ class NewsApp(App):
         self.senders_box = self.build_senders_box()
         content.add_widget(self.senders_box)
 
-        self.recipient_input = make_input("Recipient email (comma separated)")
+        self.recipients_box = self.build_recipients_box()
+        content.add_widget(self.recipients_box)
+
         self.max_emails_input = make_input("Max emails (number)")
-        content.add_widget(self.recipient_input)
         content.add_widget(self.max_emails_input)
 
         btn_row = BoxLayout(
@@ -323,6 +347,7 @@ class NewsApp(App):
         self.load_config()
         self.sent_titles = load_sent_titles(self.sent_titles_path)
         self.refresh_senders_list()
+        self.refresh_recipients_list()
         return root
 
     def on_start(self):
@@ -439,6 +464,66 @@ class NewsApp(App):
 
         return box
 
+    def build_recipients_box(self):
+        box = BoxLayout(
+            orientation="vertical",
+            size_hint=(1, None),
+            height=dp(220),
+            spacing=dp(6),
+            padding=dp(6),
+        )
+
+        header = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(6),
+        )
+        header.add_widget(
+            Label(
+                text="Recipients",
+                halign="left",
+                valign="middle",
+                font_size="16sp",
+            )
+        )
+        add_btn = Button(
+            text="Add Recipient",
+            size_hint=(None, 1),
+            width=dp(140),
+            font_size="14sp",
+        )
+        add_btn.bind(on_release=lambda *_: self.show_recipient_form_popup())
+        header.add_widget(add_btn)
+        box.add_widget(header)
+
+        self.recipients_list_layout = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
+        self.recipients_list_layout.bind(
+            minimum_height=self.recipients_list_layout.setter("height")
+        )
+
+        list_scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
+        list_scroll.add_widget(self.recipients_list_layout)
+
+        list_container = BoxLayout(size_hint=(1, 1), padding=dp(4))
+        with list_container.canvas.before:
+            Color(0.12, 0.12, 0.12, 1)
+            bg = Rectangle(pos=list_container.pos, size=list_container.size)
+        with list_container.canvas.after:
+            Color(0.5, 0.5, 0.5, 1)
+            border = Line(rectangle=(*list_container.pos, *list_container.size), width=1.2)
+
+        def upd(*_):
+            bg.pos = list_container.pos
+            bg.size = list_container.size
+            border.rectangle = (*list_container.pos, *list_container.size)
+
+        list_container.bind(pos=upd, size=upd)
+        list_container.add_widget(list_scroll)
+        box.add_widget(list_container)
+
+        return box
+
     def refresh_senders_list(self):
         self.senders_list_layout.clear_widgets()
         for idx, s in enumerate(self.senders):
@@ -450,6 +535,17 @@ class NewsApp(App):
                 ),
             )
             self.senders_list_layout.add_widget(row)
+
+    def refresh_recipients_list(self):
+        self.recipients_list_layout.clear_widgets()
+        for idx, email in enumerate(self.recipients):
+            row = RecipientRow(
+                text=email,
+                on_delete=lambda i=idx: self.show_delete_confirm(
+                    lambda: self.delete_recipient(i)
+                ),
+            )
+            self.recipients_list_layout.add_widget(row)
 
     def show_sender_form_popup(self, edit_index=None):
         is_edit = edit_index is not None
@@ -538,11 +634,84 @@ class NewsApp(App):
         cancel_btn.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
 
+    def show_recipient_form_popup(self, edit_index=None):
+        is_edit = edit_index is not None
+        initial_email = self.recipients[edit_index] if is_edit else ""
+
+        wrapper = BoxLayout(
+            orientation="vertical",
+            spacing=dp(10),
+            padding=dp(12),
+        )
+
+        wrapper.add_widget(
+            Label(
+                text="Email Address",
+                size_hint_y=None,
+                height=dp(28),
+                halign="left",
+                valign="middle",
+            )
+        )
+        email_input = TextInput(
+            text=initial_email,
+            multiline=False,
+            size_hint_y=None,
+            height=dp(54),
+            font_size="16sp",
+            padding=[dp(8), dp(10), dp(8), dp(10)],
+        )
+        wrapper.add_widget(email_input)
+
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(48),
+            spacing=dp(8),
+        )
+        save_btn = Button(text="Save")
+        cancel_btn = Button(text="No")
+        btn_row.add_widget(save_btn)
+        btn_row.add_widget(cancel_btn)
+        wrapper.add_widget(btn_row)
+
+        popup = Popup(
+            title="Edit Recipient" if is_edit else "Add Recipient",
+            content=wrapper,
+            size_hint=(0.92, None),
+            height=dp(240),
+            auto_dismiss=False,
+        )
+
+        def submit_and_close(*_):
+            email = email_input.text.strip()
+            if not email:
+                return
+            if is_edit:
+                self.recipients[edit_index] = email
+            else:
+                self.recipients.append(email)
+            self.save_config()
+            self.refresh_recipients_list()
+            popup.dismiss()
+
+        save_btn.bind(on_release=submit_and_close)
+        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
+        popup.open()
+
     def delete_sender(self, idx):
         try:
             del self.senders[idx]
             self.save_config()
             self.refresh_senders_list()
+        except Exception:
+            pass
+
+    def delete_recipient(self, idx):
+        try:
+            del self.recipients[idx]
+            self.save_config()
+            self.refresh_recipients_list()
         except Exception:
             pass
 
@@ -557,17 +726,18 @@ class NewsApp(App):
                     data = json.load(f)
 
                 self.senders = data.get("senders", []) or []
-                self.recipient_input.text = data.get("recipient", "")
+                self.recipients = data.get("recipients", []) or []
                 self.max_emails_input.text = str(data.get("max_emails", ""))
         except Exception:
             self.senders = []
+            self.recipients = []
 
     def save_config(self):
         try:
             os.makedirs(self.user_data_dir, exist_ok=True)
             data = {
                 "senders": self.senders,
-                "recipient": self.recipient_input.text.strip(),
+                "recipients": self.recipients,
                 "max_emails": self.max_emails_input.text.strip(),
             }
             with open(self.config_path, "w", encoding="utf-8") as f:
@@ -637,14 +807,13 @@ class NewsApp(App):
         self.run_in_thread(task)
 
     def on_send(self, *_):
-        recipient_raw = self.recipient_input.text.strip()
         max_raw = self.max_emails_input.text.strip()
 
         if not self.senders:
             self.set_status("Please add at least one sender.")
             return
-        if not recipient_raw:
-            self.set_status("Please fill recipient.")
+        if not self.recipients:
+            self.set_status("Please add at least one recipient.")
             return
 
         try:
@@ -652,7 +821,7 @@ class NewsApp(App):
         except ValueError:
             max_emails = 5
 
-        to_emails = [x.strip() for x in recipient_raw.split(",") if x.strip()]
+        to_emails = [x.strip() for x in self.recipients if str(x).strip()]
         self.set_buttons_enabled(False)
         self.set_status("Sending...")
 
@@ -723,10 +892,6 @@ class NewsApp(App):
 
                 remaining_after = len([t for t, _ in new_items if t not in set(t for t, _ in batch_items)])
 
-                totals_lines = []
-                for email, cnt in sent_per_sender.items():
-                    totals_lines.append(f"{email}: {cnt} sent")
-
                 out = (
                     "Finished.\n"
                     f"Batch sent: {len(batch_items)}\n"
@@ -734,8 +899,6 @@ class NewsApp(App):
                     f"Sent items total: {len(self.sent_titles)}\n"
                     f"New remaining: {remaining_after}\n\n"
                     + "\n".join(results)
-                    + "\n\n"
-                    + "\n".join(totals_lines)
                 )
 
                 Clock.schedule_once(
