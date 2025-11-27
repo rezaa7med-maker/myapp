@@ -725,4 +725,4 @@ class NewsApp(App):
 
 if __name__ == "__main__":
     NewsApp().run()
-```0
+
