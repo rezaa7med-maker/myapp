@@ -63,6 +63,39 @@ SENDER_DELAY_RANGE = (3.0, 8.0)    # delay between senders
 
 
 # -------------------------------------------------------------------
+# SENT TITLES HELPERS
+# -------------------------------------------------------------------
+def normalize_title(t):
+    return " ".join((t or "").split()).strip()
+
+
+def load_sent_titles(path):
+    if not os.path.exists(path):
+        return set()
+    out = set()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                title = normalize_title(line)
+                if title:
+                    out.add(title)
+    except Exception:
+        pass
+    return out
+
+
+def append_sent_titles(path, titles):
+    if not titles:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            for t in titles:
+                f.write(normalize_title(t).replace("\n", " ") + "\n")
+    except Exception:
+        pass
+
+
+# -------------------------------------------------------------------
 # HELPERS
 # -------------------------------------------------------------------
 def collect_news_safe(log_func=print):
@@ -88,7 +121,7 @@ def collect_news_safe(log_func=print):
 
             local_items = []
             for e in entries:
-                title = getattr(e, "title", "").strip()
+                title = normalize_title(getattr(e, "title", ""))
                 summary = getattr(e, "summary", "").strip() or title
                 if title:
                     local_items.append((title, summary))
@@ -147,7 +180,6 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items):
                         sender_email, to_emails, msg.encode("utf-8")
                     )
 
-                    # Human-like delay after each email (except maybe last)
                     if i < len(news_items) - 1:
                         time.sleep(random.uniform(*EMAIL_DELAY_RANGE))
 
@@ -212,7 +244,10 @@ class NewsApp(App):
         Window.fullscreen = False
 
         self.config_path = os.path.join(self.user_data_dir, "config.json")
+        self.sent_titles_path = os.path.join(self.user_data_dir, "sent_titles.txt")
+
         self.senders = []
+        self.sent_titles = set()
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
@@ -283,6 +318,7 @@ class NewsApp(App):
         content.add_widget(Widget(size_hint=(1, None), height=dp(90)))
 
         self.load_config()
+        self.sent_titles = load_sent_titles(self.sent_titles_path)
         self.refresh_senders_list()
         return root
 
@@ -545,12 +581,25 @@ class NewsApp(App):
             try:
                 items, total = collect_news_safe()
                 elapsed = time.time() - start
+
+                unique_titles = []
+                seen = set()
+                for t, s in items:
+                    if t not in seen:
+                        unique_titles.append((t, s))
+                        seen.add(t)
+
+                sent_count = len(self.sent_titles)
+                remaining_new = len([t for t, _ in unique_titles if t not in self.sent_titles])
+
                 Clock.schedule_once(
                     lambda dt: (
                         self.set_status(
                             f"RSS OK\n"
                             f"Total entries: {total}\n"
-                            f"Collected items: {len(items)}\n"
+                            f"Collected items: {len(unique_titles)}\n"
+                            f"Sent items total: {sent_count}\n"
+                            f"New remaining: {remaining_new}\n"
                             f"Elapsed: {elapsed:.1f}s"
                         ),
                         self.set_buttons_enabled(True),
@@ -591,13 +640,22 @@ class NewsApp(App):
 
         def task():
             try:
-                news_items, total = collect_news_safe()
-                news_items = news_items[:max_emails]
+                items, total = collect_news_safe()
 
-                if not news_items:
+                unique_items = []
+                seen = set()
+                for t, s in items:
+                    if t not in seen:
+                        unique_items.append((t, s))
+                        seen.add(t)
+
+                new_items = [(t, s) for (t, s) in unique_items if t not in self.sent_titles]
+                batch_items = new_items[:max_emails]
+
+                if not batch_items:
                     Clock.schedule_once(
                         lambda dt: (
-                            self.set_status("No news items collected."),
+                            self.set_status("No new items to send."),
                             self.set_buttons_enabled(True),
                         ),
                         0,
@@ -616,22 +674,31 @@ class NewsApp(App):
                         continue
 
                     ok, msg = send_emails_safe(
-                        sender_email, app_pass, to_emails, news_items
+                        sender_email, app_pass, to_emails, batch_items
                     )
 
                     if ok:
                         success_count += 1
-                        results.append(f"{sender_email}: OK ({len(news_items)} items)")
+                        results.append(f"{sender_email}: OK ({len(batch_items)} items)")
                     else:
                         results.append(f"{sender_email}: FAIL ({msg})")
 
-                    # Human-like delay between senders
                     if idx < len(self.senders) - 1:
                         time.sleep(random.uniform(*SENDER_DELAY_RANGE))
 
+                if success_count > 0:
+                    sent_now_titles = [t for t, _ in batch_items]
+                    append_sent_titles(self.sent_titles_path, sent_now_titles)
+                    self.sent_titles.update(sent_now_titles)
+
+                remaining_after = len([t for t, _ in new_items if t not in set(t for t, _ in batch_items)])
+
                 out = (
                     "Finished.\n"
-                    f"Successful senders: {success_count}/{len(self.senders)}\n\n"
+                    f"Batch sent: {len(batch_items)}\n"
+                    f"Successful senders: {success_count}/{len(self.senders)}\n"
+                    f"Sent items total: {len(self.sent_titles)}\n"
+                    f"New remaining: {remaining_after}\n\n"
                     + "\n".join(results)
                 )
 
@@ -658,3 +725,4 @@ class NewsApp(App):
 
 if __name__ == "__main__":
     NewsApp().run()
+```0
