@@ -301,11 +301,11 @@ class NewsApp(App):
             height=BTN_HEIGHT,
         )
         menu_btn = Button(
-            text="≡",
+            text="☰",
             size_hint=(None, None),
             width=BTN_HEIGHT,
             height=BTN_HEIGHT,
-            font_size="18sp",
+            font_size="16sp",
         )
         menu_btn.bind(on_release=lambda *_: self.show_menu_popup())
         top_bar.add_widget(menu_btn)
@@ -393,18 +393,32 @@ class NewsApp(App):
 
     def show_menu_popup(self):
         wrapper = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
+        reset_btn = Button(text="Reset RSS", size_hint_y=None, height=BTN_HEIGHT)
         exit_btn = Button(text="Exit", size_hint_y=None, height=BTN_HEIGHT)
+        wrapper.add_widget(reset_btn)
         wrapper.add_widget(exit_btn)
 
         popup = Popup(
             title="Menu",
             content=wrapper,
             size_hint=(0.6, None),
-            height=dp(140),
+            height=dp(200),
             auto_dismiss=True,
         )
+        reset_btn.bind(on_release=lambda *_: (popup.dismiss(), self.reset_rss()))
         exit_btn.bind(on_release=lambda *_: (popup.dismiss(), self.stop()))
         popup.open()
+
+    def reset_rss(self):
+        try:
+            if self.sent_titles_path:
+                os.makedirs(self.user_data_dir, exist_ok=True)
+                with open(self.sent_titles_path, "w", encoding="utf-8") as f:
+                    f.write("")
+        except Exception:
+            pass
+        self.sent_titles = set()
+        self.set_status("RSS reset.")
 
     def show_exit_confirm(self):
         self.show_confirm(
@@ -918,11 +932,10 @@ class NewsApp(App):
                     lambda dt: (
                         self.set_status(
                             f"RSS OK\n"
-                            f"Total entries: {total}\n"
-                            f"Collected items: {len(unique_titles)}\n"
-                            f"Sent items total: {sent_count}\n"
-                            f"New remaining: {remaining_new}\n"
-                            f"Elapsed: {elapsed:.1f}s"
+                            f"Total items: {len(unique_titles)}\n"
+                            f"Sent items: {sent_count}\n"
+                            f"remaining: {remaining_new}\n"
+                            f"Elapsed time: {elapsed:.1f}s"
                         ),
                         self.set_buttons_enabled(True),
                     ),
