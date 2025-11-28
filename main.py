@@ -1,300 +1,267 @@
-import os
-import json
-import threading
-import traceback
-import ssl
-import smtplib
-import base64
-import time
-import random
-
-from kivy.config import Config
-Config.set("graphics", "fullscreen", "0")
-Config.set("graphics", "borderless", "0")
-Config.set("graphics", "resizable", "1")
+# main.py
+import os, json, time, threading, ssl, traceback
+from datetime import datetime
 
 from kivy.app import App
+from kivy.clock import Clock
+from kivy.metrics import dp
+from kivy.utils import platform
+from kivy.config import Config
+from kivy.resources import resource_find
+
+# --- گرافیک: مطمئن شو فول‌اسکرین خاموشه
+Config.set("graphics", "fullscreen", "0")
+Config.set("graphics", "resizable", "1")
+
+from kivy.core.window import Window
+Window.fullscreen = False
+
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
-from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
-from kivy.uix.widget import Widget
+from kivy.uix.button import Button
+from kivy.uix.checkbox import CheckBox
 from kivy.uix.popup import Popup
-from kivy.uix.gridlayout import GridLayout
-from kivy.clock import Clock
-from kivy.core.window import Window
-from kivy.metrics import dp
-from kivy.graphics import Color, Line, Rectangle
+from kivy.uix.spinner import Spinner
+from kivy.graphics import Color, Rectangle
 
+import requests
+import feedparser
+import certifi
 
-# -------------------------------------------------------------------
-# Fix for libraries that still call base64.decodestring/encodestring
-# -------------------------------------------------------------------
-if not hasattr(base64, "decodestring"):
-    base64.decodestring = base64.decodebytes
-if not hasattr(base64, "encodestring"):
-    base64.encodestring = base64.encodebytes
+# -----------------------------
+CONFIG_PATH = "config.json"
 
+# ✅ فونت صفر ریسک:
+# اگر فونت نبود، None میشه و Kivy میره روی فونت پیش‌فرض
+FONT_CANDIDATES = [
+    "assets/fonts/Vazirmatn-Regular.ttf",
+    "assets/fonts/vazirmatn-regular.ttf",
+    "Vazirmatn-Regular.ttf",
+]
+APP_FONT = None
+for p in FONT_CANDIDATES:
+    fp = resource_find(p) or (p if os.path.exists(p) else None)
+    if fp:
+        APP_FONT = fp
+        break
 
-# -------------------------------------------------------------------
-# Optional certifi (better SSL on Android)
-# -------------------------------------------------------------------
-try:
-    import certifi
-    CERT_PATH = certifi.where()
-    os.environ["SSL_CERT_FILE"] = CERT_PATH
-    os.environ["REQUESTS_CA_BUNDLE"] = CERT_PATH
-except Exception:
-    CERT_PATH = None
+def fkw():
+    """font kwargs -> همیشه امن"""
+    return {"font_name": APP_FONT} if APP_FONT else {}
 
-
-# -------------------------------------------------------------------
-# CONSTANTS
-# -------------------------------------------------------------------
-RSS_FEEDS = [
-    "https://feeds.bbci.co.uk/persian/rss.xml",
-    "https://parsi.euronews.com/index.php/rss?level=program&name=world",
-    "https://www.mehrnews.com/rss",
-    "https://www.tabnak.ir/fa/rss/allnews",
-    "https://www.parseek.com/rss/",
+# -----------------------------
+DEFAULT_SENDERS = [
+    {"email": "example@gmail.com", "app_password": "xxxx xxxx xxxx xxxx"}
+]
+DEFAULT_RECIPIENTS = [
+    {"email": "friend1@gmail.com", "enabled": True},
+    {"email": "friend2@gmail.com", "enabled": False},
+]
+DEFAULT_FEEDS = [
+    "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+    "https://www.theguardian.com/world/rss",
 ]
 
-REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0 (Android) KivyApp/1.0"}
-
-RSS_PER_FEED_TIMEOUT = (5, 8)
-RSS_TOTAL_TIMEOUT = 20
-
-EMAIL_DELAY_RANGE = (2.5, 6.0)
-SENDER_DELAY_RANGE = (3.0, 8.0)
-
-LIGHT_BLUE = (0.3, 0.65, 1.0, 1.0)
-LIGHT_GREEN = (0.0, 0.8, 0.0, 1.0)
-LIGHT_PURPLE = (0.75, 0.45, 1.0, 1.0)
-CREAM_WHITE = (0.96, 0.96, 0.88, 1.0)
-NORMAL_GREEN = (0.0, 0.8, 0.0, 1.0)
-RED = (1.0, 0.4, 0.4, 1.0)
-
-BTN_HEIGHT = dp(46)
-
-
-# -------------------------------------------------------------------
-# SENT TITLES HELPERS
-# -------------------------------------------------------------------
-def normalize_title(t):
-    return " ".join((t or "").split()).strip()
-
-
-def load_sent_titles(path):
-    if not os.path.exists(path):
-        return set()
-    out = set()
+# -----------------------------
+def safe_load_json(path, default):
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                title = normalize_title(line)
-                if title:
-                    out.add(title)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
     except Exception:
         pass
-    return out
+    return default
 
+def safe_save_json(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
-def append_sent_titles(path, titles):
-    if not titles:
-        return
-    try:
-        with open(path, "a", encoding="utf-8") as f:
-            for t in titles:
-                f.write(normalize_title(t).replace("\n", " ") + "\n")
-    except Exception:
-        pass
-
-
-# -------------------------------------------------------------------
-# HELPERS
-# -------------------------------------------------------------------
-def collect_news_safe(log_func=print):
-    import requests
-    import feedparser
-
-    items = []
-    total_entries = 0
-    lock = threading.Lock()
-
-    def fetch_one(url):
-        nonlocal total_entries
-        try:
-            kwargs = dict(headers=REQUEST_HEADERS, timeout=RSS_PER_FEED_TIMEOUT)
-            if CERT_PATH:
-                kwargs["verify"] = CERT_PATH
-
-            r = requests.get(url, **kwargs)
-            r.raise_for_status()
-
-            feed = feedparser.parse(r.text)
-            entries = getattr(feed, "entries", []) or []
-
-            local_items = []
-            for e in entries:
-                title = normalize_title(getattr(e, "title", ""))
-                summary = getattr(e, "summary", "").strip() or title
-                if title:
-                    local_items.append((title, summary))
-
-            with lock:
-                total_entries += len(entries)
-                items.extend(local_items)
-
-        except Exception as e:
-            log_func(f"RSS error for {url}: {e}")
-
-    threads = []
-    for url in RSS_FEEDS:
-        t = threading.Thread(target=fetch_one, args=(url,), daemon=True)
-        threads.append(t)
-        t.start()
-
-    start = time.time()
-    for t in threads:
-        remaining = RSS_TOTAL_TIMEOUT - (time.time() - start)
-        if remaining <= 0:
-            break
-        t.join(timeout=remaining)
-
-    return items, total_entries
-
-
-def send_emails_safe(sender_email, app_password, to_emails, news_items, progress_cb=None):
-    last_err = None
-
-    for verified in (True, False):
-        try:
-            if verified:
-                if CERT_PATH:
-                    context = ssl.create_default_context(cafile=CERT_PATH)
-                else:
-                    context = ssl.create_default_context()
-            else:
-                context = ssl._create_unverified_context()
-
-            with smtplib.SMTP_SSL(
-                "smtp.gmail.com", 465, context=context, timeout=20
-            ) as server:
-                server.login(sender_email, app_password)
-
-                total_n = len(news_items)
-                for i, (title, summary) in enumerate(news_items):
-                    if progress_cb:
-                        try:
-                            progress_cb(i + 1, total_n)
-                        except Exception:
-                            pass
-
-                    msg = "\n".join(
-                        [
-                            f"To: {', '.join(to_emails)}",
-                            f"Subject: {title}",
-                            "",
-                            summary,
-                        ]
-                    )
-                    server.sendmail(
-                        sender_email, to_emails, msg.encode("utf-8")
-                    )
-
-                    if i < total_n - 1:
-                        time.sleep(random.uniform(*EMAIL_DELAY_RANGE))
-
-            return True, (
-                "Sent with verified SSL"
-                if verified
-                else "Sent without SSL verification"
-            )
-
-        except Exception as e:
-            last_err = e
-            if verified and "CERTIFICATE_VERIFY_FAILED" in str(e):
-                continue
-            break
-
-    return False, str(last_err)
-
-
-# -------------------------------------------------------------------
-# UI ROW FOR SENDERS / RECIPIENTS
-# -------------------------------------------------------------------
-class SenderRow(BoxLayout):
-    def __init__(self, text, on_delete, **kwargs):
-        super().__init__(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(46),
-            spacing=dp(6),
-            **kwargs,
-        )
-
-        self.lbl = Label(
-            text=text,
-            halign="left",
-            valign="middle",
-            size_hint_x=0.89,
-            font_size="15sp",
-        )
-        self.lbl.bind(
-            size=lambda inst, *_: setattr(
-                inst, "text_size", (inst.width, None)
-            )
-        )
-
-        btn_del = Button(text="×", size_hint_x=0.11, font_size="16sp")
-        btn_del.bind(on_release=lambda *_: on_delete())
-
-        self.add_widget(self.lbl)
-        self.add_widget(btn_del)
-
-
-class RecipientRow(BoxLayout):
-    def __init__(self, text, on_delete, **kwargs):
-        super().__init__(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(46),
-            spacing=dp(6),
-            **kwargs,
-        )
-
-        self.lbl = Label(
-            text=text,
-            halign="left",
-            valign="middle",
-            size_hint_x=0.89,
-            font_size="15sp",
-        )
-        self.lbl.bind(
-            size=lambda inst, *_: setattr(
-                inst, "text_size", (inst.width, None)
-            )
-        )
-
-        btn_del = Button(text="×", size_hint_x=0.11, font_size="16sp")
-        btn_del.bind(on_release=lambda *_: on_delete())
-
-        self.add_widget(self.lbl)
-        self.add_widget(btn_del)
-
-
-# -------------------------------------------------------------------
-# MAIN APP
-# -------------------------------------------------------------------
-from kivy.utils import platform
-
+# -----------------------------
 class NewsApp(App):
+    def build(self):
+        self.title = "News Mailer"
+        self.senders = []
+        self.recipients = []
+        self.feeds = []
+        self._loading = False
+
+        self._load_config()
+
+        # --- روت اصلی
+        root = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(12))
+        self.root = root
+
+        # --- پس‌زمینه نرم و تیره
+        with root.canvas.before:
+            Color(0.08, 0.08, 0.08, 1)
+            self._bg_rect = Rectangle(pos=root.pos, size=root.size)
+        root.bind(pos=self._update_bg, size=self._update_bg)
+
+        # ----- بالا: مدیریت حساب‌ها
+        top = GridLayout(cols=2, spacing=dp(10), size_hint=(1, None))
+        top.bind(minimum_height=top.setter("height"))
+
+        # Senders box
+        senders_box = BoxLayout(orientation="vertical", spacing=dp(6))
+        senders_title = Label(
+            text="Sender Accounts",
+            font_size="16sp",
+            size_hint=(1, None),
+            height=dp(26),
+            halign="left",
+            valign="middle",
+            color=(1,1,1,1),
+            **fkw()
+        )
+        senders_title.bind(size=senders_title.setter("text_size"))
+
+        self.senders_list = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
+        self.senders_list.bind(minimum_height=self.senders_list.setter("height"))
+        senders_scroll = ScrollView(size_hint=(1, None), height=dp(160))
+        senders_scroll.add_widget(self.senders_list)
+
+        senders_buttons = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(6))
+        btn_add_sender = Button(text="Add Sender", **fkw())
+        btn_add_sender.bind(on_release=self._popup_add_sender)
+        btn_del_sender = Button(text="Delete Sender", **fkw())
+        btn_del_sender.bind(on_release=self._popup_delete_sender)
+        senders_buttons.add_widget(btn_add_sender)
+        senders_buttons.add_widget(btn_del_sender)
+
+        senders_box.add_widget(senders_title)
+        senders_box.add_widget(senders_scroll)
+        senders_box.add_widget(senders_buttons)
+
+        # Recipients box
+        recipients_box = BoxLayout(orientation="vertical", spacing=dp(6))
+        recipients_title = Label(
+            text="Recipients",
+            font_size="16sp",
+            size_hint=(1, None),
+            height=dp(26),
+            halign="left",
+            valign="middle",
+            color=(1,1,1,1),
+            **fkw()
+        )
+        recipients_title.bind(size=recipients_title.setter("text_size"))
+
+        self.recipients_list = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
+        self.recipients_list.bind(minimum_height=self.recipients_list.setter("height"))
+        recipients_scroll = ScrollView(size_hint=(1, None), height=dp(160))
+        recipients_scroll.add_widget(self.recipients_list)
+
+        recipients_buttons = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(6))
+        btn_add_rec = Button(text="Add Recipient", **fkw())
+        btn_add_rec.bind(on_release=self._popup_add_recipient)
+        btn_del_rec = Button(text="Delete Recipient", **fkw())
+        btn_del_rec.bind(on_release=self._popup_delete_recipient)
+        recipients_buttons.add_widget(btn_add_rec)
+        recipients_buttons.add_widget(btn_del_rec)
+
+        recipients_box.add_widget(recipients_title)
+        recipients_box.add_widget(recipients_scroll)
+        recipients_box.add_widget(recipients_buttons)
+
+        top.add_widget(senders_box)
+        top.add_widget(recipients_box)
+
+        # ----- وسط: Feeds
+        feeds_box = BoxLayout(orientation="vertical", spacing=dp(6),
+                              size_hint=(1, None), height=dp(170))
+        feeds_title = Label(
+            text="RSS Feeds",
+            font_size="16sp",
+            size_hint=(1, None),
+            height=dp(26),
+            halign="left",
+            valign="middle",
+            color=(1,1,1,1),
+            **fkw()
+        )
+        feeds_title.bind(size=feeds_title.setter("text_size"))
+
+        self.feeds_list = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
+        self.feeds_list.bind(minimum_height=self.feeds_list.setter("height"))
+        feeds_scroll = ScrollView(size_hint=(1, None), height=dp(100))
+        feeds_scroll.add_widget(self.feeds_list)
+
+        feeds_buttons = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(6))
+        btn_add_feed = Button(text="Add Feed", **fkw())
+        btn_add_feed.bind(on_release=self._popup_add_feed)
+        btn_del_feed = Button(text="Delete Feed", **fkw())
+        btn_del_feed.bind(on_release=self._popup_delete_feed)
+        feeds_buttons.add_widget(btn_add_feed)
+        feeds_buttons.add_widget(btn_del_feed)
+
+        feeds_box.add_widget(feeds_title)
+        feeds_box.add_widget(feeds_scroll)
+        feeds_box.add_widget(feeds_buttons)
+
+        # ----- پایین: actions + output
+        actions = BoxLayout(size_hint=(1, None), height=dp(48), spacing=dp(8))
+        self.spinner_lang = Spinner(
+            text="English",
+            values=("English", "Persian"),
+            size_hint=(None, 1),
+            width=dp(140),
+            **fkw()
+        )
+        btn_collect = Button(text="Collect News", **fkw())
+        btn_collect.bind(on_release=self.collect_news_safe)
+        btn_send = Button(text="Send Emails", **fkw())
+        btn_send.bind(on_release=self.send_emails_safe)
+
+        actions.add_widget(self.spinner_lang)
+        actions.add_widget(btn_collect)
+        actions.add_widget(btn_send)
+
+        self.status_label = Label(
+            text="Ready...",
+            font_size="16sp",
+            size_hint=(1, None),
+            height=dp(220),
+            halign="right",
+            valign="top",
+            color=(1,1,1,1),
+            **fkw()
+        )
+        self.status_label.bind(size=self.status_label.setter("text_size"))
+        status_scroll = ScrollView()
+        status_scroll.add_widget(self.status_label)
+
+        # add to root
+        root.add_widget(top)
+        root.add_widget(feeds_box)
+        root.add_widget(actions)
+        root.add_widget(status_scroll)
+
+        self.refresh_senders_list()
+        self.refresh_recipients_list()
+        self.refresh_feeds_list()
+
+        return root
+
+    # -----------------------------
+    def _update_bg(self, *_):
+        self._bg_rect.pos = self.root.pos
+        self._bg_rect.size = self.root.size
+
+    # -----------------------------
+    def on_start(self):
+        Window.fullscreen = False
+        Clock.schedule_once(self._apply_system_ui, 0)
+        Clock.schedule_once(self._apply_system_ui, 0.5)
+        Clock.schedule_once(self._apply_system_ui, 1.0)
 
     def _apply_system_ui(self, *_):
         if platform != "android":
             return
-
         try:
             from android.runnable import run_on_ui_thread
             from jnius import autoclass
@@ -309,822 +276,380 @@ class NewsApp(App):
                 window = activity.getWindow()
                 decor = window.getDecorView()
 
-                # ✅ فول‌اسکرین و ترنسلوسنت رو کامل بردار
                 window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
-
-                # ✅ اجبار به غیر فول‌اسکرین
                 window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
-
-                # ✅ فقط Visible — هیچ فلگ immersive یا layout نذار
                 decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
 
             _do()
-
         except Exception:
             pass
 
-    def build(self):
-        Window.clearcolor = (0, 0, 0, 1)
-        Window.fullscreen = False
+    # -----------------------------
+    def _load_config(self):
+        data = safe_load_json(CONFIG_PATH, {})
+        self.senders = data.get("senders", DEFAULT_SENDERS.copy())
+        self.recipients = data.get("recipients", DEFAULT_RECIPIENTS.copy())
+        self.feeds = data.get("feeds", DEFAULT_FEEDS.copy())
 
-        self.config_path = os.path.join(self.user_data_dir, "config.json")
-        self.sent_titles_path = os.path.join(self.user_data_dir, "sent_titles.txt")
+    def _save_config(self):
+        data = {
+            "senders": self.senders,
+            "recipients": self.recipients,
+            "feeds": self.feeds,
+        }
+        safe_save_json(CONFIG_PATH, data)
 
-        self.senders = []
-        self.recipients = []
-        self.sent_titles = set()
-        self.max_emails_value = 20
-
-        root = BoxLayout(orientation="vertical", padding=10, spacing=10)
-
-        top_bar = BoxLayout(
-            orientation="horizontal",
-            size_hint=(1, None),
-            height=BTN_HEIGHT,
-        )
-        menu_btn = Button(
-            text="[b]MENU[/b]",
-            markup=True,
-            size_hint=(None, None),
-            width=BTN_HEIGHT,
-            height=BTN_HEIGHT,
-            font_size="14sp",
-            background_normal="",
-            background_color=CREAM_WHITE,
-            color=(0, 0, 0, 1),
-        )
-        menu_btn.bind(on_release=lambda *_: self.show_menu_popup())
-        top_bar.add_widget(menu_btn)
-        top_bar.add_widget(Widget())
-        root.add_widget(top_bar)
-
-        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True)
-        content = BoxLayout(
-            orientation="vertical",
-            size_hint_y=None,
-            padding=dp(10),
-            spacing=dp(10),
-        )
-        content.bind(minimum_height=content.setter("height"))
-        scroll.add_widget(content)
-        root.add_widget(scroll)
-
-        self.senders_box = self.build_senders_box()
-        content.add_widget(self.senders_box)
-
-        self.recipients_box = self.build_recipients_box()
-        content.add_widget(self.recipients_box)
-
-        self.max_emails_btn = Button(
-            text=f"Max emails: {self.max_emails_value}",
-            size_hint=(1, None),
-            height=BTN_HEIGHT,
-            font_size="16sp",
-            background_normal="",
-            background_color=CREAM_WHITE,
-            color=(0, 0, 0, 1),
-        )
-        self.max_emails_btn.bind(on_release=lambda *_: self.show_max_emails_popup())
-        content.add_widget(self.max_emails_btn)
-
-        btn_row = BoxLayout(
-            orientation="horizontal",
-            size_hint=(1, None),
-            height=BTN_HEIGHT,
-            spacing=dp(10),
-        )
-        self.test_btn = Button(
-            text="Test RSS",
-            background_normal="",
-            background_color=LIGHT_PURPLE,
-        )
-        self.send_btn = Button(
-            text="Send",
-            background_normal="",
-            background_color=LIGHT_GREEN,
-        )
-        self.test_btn.bind(on_release=self.on_test_rss)
-        self.send_btn.bind(on_release=self.on_send)
-        btn_row.add_widget(self.test_btn)
-        btn_row.add_widget(self.send_btn)
-        content.add_widget(btn_row)
-
-        self.status_label = Label(
-            text="Ready...",
-            font_size="16sp",
-            size_hint=(1, None),
-            height=dp(220),
-            halign="left",
-            valign="top",
-        )
-        self.status_label.bind(size=self.status_label.setter("text_size"))
-        content.add_widget(self.status_label)
-
-        content.add_widget(Widget(size_hint=(1, None), height=dp(90)))
-
-        self.load_config()
-        self.sent_titles = load_sent_titles(self.sent_titles_path)
-        self.refresh_senders_list()
-        self.refresh_recipients_list()
-        return root
-
-    def on_start(self):
-        Window.fullscreen = False
-        Clock.schedule_once(self._apply_system_ui, 0)
-        Clock.schedule_once(self._apply_system_ui, 0.5)
-        Clock.schedule_once(self._apply_system_ui, 1.0)
-
-        Window.bind(on_keyboard=self.on_keyboard)
-        Window.bind(on_focus=self._apply_system_ui)
-        Window.bind(on_resize=self._apply_system_ui)
-
-    def on_resume(self):
-        Window.fullscreen = False
-        self._apply_system_ui()
-        return True
-
-    def on_keyboard(self, window, key, scancode, codepoint, modifier):
-        if key == 27:
-            self.show_exit_confirm()
-            return True
-        return False
-
-    def show_menu_popup(self):
-        wrapper = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
-        reset_btn = Button(text="Reset RSS", size_hint_y=None, height=BTN_HEIGHT)
-        exit_btn = Button(text="Exit", size_hint_y=None, height=BTN_HEIGHT)
-        wrapper.add_widget(reset_btn)
-        wrapper.add_widget(exit_btn)
-
-        popup = Popup(
-            title="Menu",
-            content=wrapper,
-            size_hint=(0.6, None),
-            height=dp(200),
-            auto_dismiss=True,
-        )
-        reset_btn.bind(on_release=lambda *_: (popup.dismiss(), self.reset_rss()))
-        exit_btn.bind(on_release=lambda *_: (popup.dismiss(), self.stop()))
-        popup.open()
-
-    def reset_rss(self):
-        try:
-            if self.sent_titles_path:
-                os.makedirs(self.user_data_dir, exist_ok=True)
-                with open(self.sent_titles_path, "w", encoding="utf-8") as f:
-                    f.write("")
-        except Exception:
-            pass
-        self.sent_titles = set()
-        self.set_status("RSS reset.")
-
-    def show_exit_confirm(self):
-        self.show_confirm(
-            title="Exit?",
-            message="Exit?",
-            yes_text="Yes, I'm sure",
-            no_text="Cancel",
-            on_yes=self.stop,
-        )
-
-    def show_send_confirm(self):
-        self.show_confirm(
-            title="Send?",
-            message="Send?",
-            yes_text="Yes, I'm sure",
-            no_text="Cancel",
-            on_yes=self.do_send,
-        )
-
-    def show_delete_confirm(self, on_yes):
-        self.show_confirm(
-            title="Delete?",
-            message="Delete?",
-            yes_text="Yes, I'm sure",
-            no_text="Cancel",
-            on_yes=on_yes,
-        )
-
-    def show_confirm(self, title, message, yes_text, no_text, on_yes):
-        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
-        content.add_widget(Label(text=message))
-
-        btns = BoxLayout(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(44),
-            spacing=dp(6),
-        )
-        yes_btn = Button(text=yes_text, background_normal="", background_color=NORMAL_GREEN)
-        no_btn = Button(text=no_text, background_normal="", background_color=RED)
-        btns.add_widget(yes_btn)
-        btns.add_widget(no_btn)
-        content.add_widget(btns)
-
-        popup = Popup(
-            title=title,
-            content=content,
-            size_hint=(0.85, None),
-            height=dp(200),
-            auto_dismiss=False,
-        )
-        yes_btn.bind(on_release=lambda *_: (popup.dismiss(), on_yes()))
-        no_btn.bind(on_release=lambda *_: popup.dismiss())
-        popup.open()
-
-    def build_senders_box(self):
-        box = BoxLayout(
-            orientation="vertical",
-            size_hint=(1, None),
-            height=dp(220),
-            spacing=dp(6),
-            padding=dp(6),
-        )
-
-        header = BoxLayout(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=BTN_HEIGHT,
-            spacing=dp(6),
-        )
-        header.add_widget(
-            Label(
-                text="Senders",
-                halign="left",
-                valign="middle",
-                font_size="16sp",
-            )
-        )
-        add_btn = Button(
-            text="Add Sender",
-            size_hint=(None, None),
-            width=dp(140),
-            height=BTN_HEIGHT,
-            font_size="14sp",
-            background_normal="",
-            background_color=LIGHT_BLUE,
-        )
-        add_btn.bind(on_release=lambda *_: self.show_sender_form_popup())
-        header.add_widget(add_btn)
-        box.add_widget(header)
-
-        self.senders_list_layout = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
-        self.senders_list_layout.bind(
-            minimum_height=self.senders_list_layout.setter("height")
-        )
-
-        list_scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
-        list_scroll.add_widget(self.senders_list_layout)
-
-        list_container = BoxLayout(size_hint=(1, 1), padding=dp(4))
-        with list_container.canvas.before:
-            Color(0.12, 0.12, 0.12, 1)
-            bg = Rectangle(pos=list_container.pos, size=list_container.size)
-        with list_container.canvas.after:
-            Color(0.5, 0.5, 0.5, 1)
-            border = Line(rectangle=(*list_container.pos, *list_container.size), width=1.2)
-
-        def upd(*_):
-            bg.pos = list_container.pos
-            bg.size = list_container.size
-            border.rectangle = (*list_container.pos, *list_container.size)
-
-        list_container.bind(pos=upd, size=upd)
-        list_container.add_widget(list_scroll)
-        box.add_widget(list_container)
-
-        return box
-
-    def build_recipients_box(self):
-        box = BoxLayout(
-            orientation="vertical",
-            size_hint=(1, None),
-            height=dp(220),
-            spacing=dp(6),
-            padding=dp(6),
-        )
-
-        header = BoxLayout(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=BTN_HEIGHT,
-            spacing=dp(6),
-        )
-        header.add_widget(
-            Label(
-                text="Recipients",
-                halign="left",
-                valign="middle",
-                font_size="16sp",
-            )
-        )
-        add_btn = Button(
-            text="Add Recipient",
-            size_hint=(None, None),
-            width=dp(140),
-            height=BTN_HEIGHT,
-            font_size="14sp",
-            background_normal="",
-            background_color=LIGHT_BLUE,
-        )
-        add_btn.bind(on_release=lambda *_: self.show_recipient_form_popup())
-        header.add_widget(add_btn)
-        box.add_widget(header)
-
-        self.recipients_list_layout = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
-        self.recipients_list_layout.bind(
-            minimum_height=self.recipients_list_layout.setter("height")
-        )
-
-        list_scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
-        list_scroll.add_widget(self.recipients_list_layout)
-
-        list_container = BoxLayout(size_hint=(1, 1), padding=dp(4))
-        with list_container.canvas.before:
-            Color(0.12, 0.12, 0.12, 1)
-            bg = Rectangle(pos=list_container.pos, size=list_container.size)
-        with list_container.canvas.after:
-            Color(0.5, 0.5, 0.5, 1)
-            border = Line(rectangle=(*list_container.pos, *list_container.size), width=1.2)
-
-        def upd(*_):
-            bg.pos = list_container.pos
-            bg.size = list_container.size
-            border.rectangle = (*list_container.pos, *list_container.size)
-
-        list_container.bind(pos=upd, size=upd)
-        list_container.add_widget(list_scroll)
-        box.add_widget(list_container)
-
-        return box
-
+    # -----------------------------
     def refresh_senders_list(self):
-        self.senders_list_layout.clear_widgets()
-        for idx, s in enumerate(self.senders):
-            email = s.get("email", "")
-            row = SenderRow(
-                text=email,
-                on_delete=lambda i=idx: self.show_delete_confirm(
-                    lambda: self.delete_sender(i)
-                ),
+        self.senders_list.clear_widgets()
+        for i, s in enumerate(self.senders):
+            row = BoxLayout(size_hint_y=None, height=dp(32))
+            lbl = Label(
+                text=f"[{i+1}] {s.get('email','')}",
+                font_size="14sp",
+                halign="left",
+                valign="middle",
+                color=(0.9,0.9,0.9,1),
+                **fkw()
             )
-            self.senders_list_layout.add_widget(row)
+            lbl.bind(size=lbl.setter("text_size"))
+            row.add_widget(lbl)
+            self.senders_list.add_widget(row)
 
     def refresh_recipients_list(self):
-        self.recipients_list_layout.clear_widgets()
-        for idx, email in enumerate(self.recipients):
-            row = RecipientRow(
-                text=email,
-                on_delete=lambda i=idx: self.show_delete_confirm(
-                    lambda: self.delete_recipient(i)
-                ),
-            )
-            self.recipients_list_layout.add_widget(row)
-
-    def show_sender_form_popup(self, edit_index=None):
-        is_edit = edit_index is not None
-        initial_email = self.senders[edit_index]["email"] if is_edit else ""
-        initial_pw = self.senders[edit_index]["password"] if is_edit else ""
-
-        wrapper = BoxLayout(
-            orientation="vertical",
-            spacing=dp(10),
-            padding=dp(12),
-        )
-
-        wrapper.add_widget(
-            Label(
-                text="Email Address",
-                size_hint_y=None,
-                height=dp(28),
+        self.recipients_list.clear_widgets()
+        for i, r in enumerate(self.recipients):
+            row = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
+            cb = CheckBox(active=r.get("enabled", True))
+            cb.bind(active=lambda inst, val, idx=i: self._toggle_recipient(idx, val))
+            lbl = Label(
+                text=f"[{i+1}] {r.get('email','')}",
+                font_size="14sp",
                 halign="left",
                 valign="middle",
+                color=(0.9,0.9,0.9,1),
+                **fkw()
             )
-        )
-        email_input = TextInput(
-            text=initial_email,
-            multiline=False,
-            size_hint_y=None,
-            height=dp(54),
-            font_size="16sp",
-            padding=[dp(8), dp(10), dp(8), dp(10)],
-        )
-        wrapper.add_widget(email_input)
+            lbl.bind(size=lbl.setter("text_size"))
+            row.add_widget(cb)
+            row.add_widget(lbl)
+            self.recipients_list.add_widget(row)
 
-        wrapper.add_widget(
-            Label(
-                text="App Password",
-                size_hint_y=None,
-                height=dp(28),
+    def refresh_feeds_list(self):
+        self.feeds_list.clear_widgets()
+        for i, url in enumerate(self.feeds):
+            row = BoxLayout(size_hint_y=None, height=dp(30))
+            lbl = Label(
+                text=f"[{i+1}] {url}",
+                font_size="13sp",
                 halign="left",
                 valign="middle",
+                color=(0.85,0.85,0.85,1),
+                **fkw()
             )
-        )
-        pw_input = TextInput(
-            text=initial_pw,
-            multiline=False,
-            password=True,
-            size_hint_y=None,
-            height=dp(54),
-            font_size="16sp",
-            padding=[dp(8), dp(10), dp(8), dp(10)],
-        )
-        wrapper.add_widget(pw_input)
+            lbl.bind(size=lbl.setter("text_size"))
+            row.add_widget(lbl)
+            self.feeds_list.add_widget(row)
 
-        btn_row = BoxLayout(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(48),
-            spacing=dp(8),
-        )
-        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
-        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED)
-        btn_row.add_widget(save_btn)
-        btn_row.add_widget(cancel_btn)
-        wrapper.add_widget(btn_row)
+    def _toggle_recipient(self, idx, val):
+        if 0 <= idx < len(self.recipients):
+            self.recipients[idx]["enabled"] = bool(val)
+            self._save_config()
 
-        popup = Popup(
-            title="Edit Sender" if is_edit else "Add Sender",
-            content=wrapper,
-            size_hint=(0.92, None),
-            height=dp(320),
-            auto_dismiss=False,
-        )
+    # -----------------------------
+    # Popups for add/delete
+    def _popup_add_sender(self, *_):
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        ti_email = TextInput(hint_text="Gmail address", multiline=False, **fkw())
+        ti_pass = TextInput(hint_text="App password", multiline=False, password=True, **fkw())
 
-        def submit_and_close(*_):
-            email = email_input.text.strip()
-            password = pw_input.text.strip()
-            if not email or not password:
-                return
-            if is_edit:
-                self.senders[edit_index] = {"email": email, "password": password}
-            else:
-                self.senders.append({"email": email, "password": password})
-            self.save_config()
-            self.refresh_senders_list()
-            popup.dismiss()
+        btns = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(6))
+        btn_ok = Button(text="Add", **fkw())
+        btn_cancel = Button(text="Cancel", **fkw())
+        btns.add_widget(btn_ok); btns.add_widget(btn_cancel)
 
-        save_btn.bind(on_release=submit_and_close)
-        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
-        popup.open()
+        content.add_widget(ti_email)
+        content.add_widget(ti_pass)
+        content.add_widget(btns)
 
-    def show_recipient_form_popup(self, edit_index=None):
-        is_edit = edit_index is not None
-        initial_email = self.recipients[edit_index] if is_edit else ""
+        pop = Popup(title="Add Sender", content=content, size_hint=(0.9, 0.6))
+        btn_cancel.bind(on_release=pop.dismiss)
 
-        wrapper = BoxLayout(
-            orientation="vertical",
-            spacing=dp(10),
-            padding=dp(12),
-        )
+        def _add(*_):
+            email = ti_email.text.strip()
+            app_pass = ti_pass.text.strip()
+            if email and app_pass:
+                self.senders.append({"email": email, "app_password": app_pass})
+                self._save_config()
+                self.refresh_senders_list()
+                pop.dismiss()
+        btn_ok.bind(on_release=_add)
 
-        wrapper.add_widget(
-            Label(
-                text="Email Address",
-                size_hint_y=None,
-                height=dp(28),
-                halign="left",
-                valign="middle",
-            )
-        )
-        email_input = TextInput(
-            text=initial_email,
-            multiline=False,
-            size_hint_y=None,
-            height=dp(54),
-            font_size="16sp",
-            padding=[dp(8), dp(10), dp(8), dp(10)],
-        )
-        wrapper.add_widget(email_input)
+        pop.open()
 
-        btn_row = BoxLayout(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(48),
-            spacing=dp(8),
-        )
-        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
-        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED)
-        btn_row.add_widget(save_btn)
-        btn_row.add_widget(cancel_btn)
-        wrapper.add_widget(btn_row)
-
-        popup = Popup(
-            title="Edit Recipient" if is_edit else "Add Recipient",
-            content=wrapper,
-            size_hint=(0.92, None),
-            height=dp(240),
-            auto_dismiss=False,
-        )
-
-        def submit_and_close(*_):
-            email = email_input.text.strip()
-            if not email:
-                return
-            if is_edit:
-                self.recipients[edit_index] = email
-            else:
-                self.recipients.append(email)
-            self.save_config()
-            self.refresh_recipients_list()
-            popup.dismiss()
-
-        save_btn.bind(on_release=submit_and_close)
-        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
-        popup.open()
-
-    def show_max_emails_popup(self):
-        wrapper = BoxLayout(
-            orientation="vertical",
-            spacing=dp(10),
-            padding=dp(12),
-        )
-
-        wrapper.add_widget(
-            Label(
-                text="Max emails",
-                size_hint_y=None,
-                height=dp(28),
-                halign="left",
-                valign="middle",
-            )
-        )
-        num_input = TextInput(
-            text=str(self.max_emails_value),
-            multiline=False,
-            input_filter="int",
-            size_hint_y=None,
-            height=dp(54),
-            font_size="16sp",
-            padding=[dp(8), dp(10), dp(8), dp(10)],
-        )
-        wrapper.add_widget(num_input)
-
-        btn_row = BoxLayout(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(48),
-            spacing=dp(8),
-        )
-        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
-        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED)
-        btn_row.add_widget(save_btn)
-        btn_row.add_widget(cancel_btn)
-        wrapper.add_widget(btn_row)
-
-        popup = Popup(
-            title="Set Max Emails",
-            content=wrapper,
-            size_hint=(0.92, None),
-            height=dp(240),
-            auto_dismiss=False,
-        )
-
-        def submit_and_close(*_):
-            raw = num_input.text.strip()
-            try:
-                val = int(raw) if raw else 20
-            except ValueError:
-                val = 20
-            self.max_emails_value = val
-            if hasattr(self, "max_emails_btn"):
-                self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
-            self.save_config()
-            popup.dismiss()
-
-        save_btn.bind(on_release=submit_and_close)
-        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
-        popup.open()
-
-    def delete_sender(self, idx):
-        try:
-            del self.senders[idx]
-            self.save_config()
-            self.refresh_senders_list()
-        except Exception:
-            pass
-
-    def delete_recipient(self, idx):
-        try:
-            del self.recipients[idx]
-            self.save_config()
-            self.refresh_recipients_list()
-        except Exception:
-            pass
-
-    def on_pause(self):
-        return True
-
-    # ---------------- CONFIG ----------------
-    def load_config(self):
-        try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                self.senders = data.get("senders", []) or []
-                self.recipients = data.get("recipients", []) or []
-                mr = data.get("max_emails", "")
-                try:
-                    self.max_emails_value = int(mr) if str(mr).strip() else 20
-                except ValueError:
-                    self.max_emails_value = 20
-                if hasattr(self, "max_emails_btn"):
-                    self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
-        except Exception:
-            self.senders = []
-            self.recipients = []
-            self.max_emails_value = 20
-            if hasattr(self, "max_emails_btn"):
-                self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
-
-    def save_config(self):
-        try:
-            os.makedirs(self.user_data_dir, exist_ok=True)
-            data = {
-                "senders": self.senders,
-                "recipients": self.recipients,
-                "max_emails": str(self.max_emails_value),
-            }
-            with open(self.config_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
-
-    def on_stop(self):
-        self.save_config()
-
-    # ---------------- UI HELPERS ----------------
-    def set_status(self, text):
-        self.status_label.text = text
-
-    def run_in_thread(self, func):
-        threading.Thread(target=func, daemon=True).start()
-
-    def set_buttons_enabled(self, enabled: bool):
-        self.test_btn.disabled = not enabled
-        self.send_btn.disabled = not enabled
-
-    # ---------------- ACTIONS ----------------
-    def on_test_rss(self, *_):
-        self.set_buttons_enabled(False)
-        self.set_status("Testing RSS ...")
-
-        def task():
-            start = time.time()
-            try:
-                items, total = collect_news_safe()
-                elapsed = time.time() - start
-
-                unique_titles = []
-                seen = set()
-                for t, s in items:
-                    if t not in seen:
-                        unique_titles.append((t, s))
-                        seen.add(t)
-
-                sent_count = len(self.sent_titles)
-                remaining_new = len([t for t, _ in unique_titles if t not in self.sent_titles])
-
-                Clock.schedule_once(
-                    lambda dt: (
-                        self.set_status(
-                            f"RSS OK\n"
-                            f"Total items: {len(unique_titles)}\n"
-                            f"Sent items: {sent_count}\n"
-                            f"remaining: {remaining_new}\n"
-                            f"Elapsed time: {elapsed:.1f}s"
-                        ),
-                        self.set_buttons_enabled(True),
-                    ),
-                    0,
-                )
-            except Exception as e:
-                tb = traceback.format_exc()
-                Clock.schedule_once(
-                    lambda dt: (
-                        self.set_status(f"RSS Error:\n{e}\n\n{tb}"),
-                        self.set_buttons_enabled(True),
-                    ),
-                    0,
-                )
-
-        self.run_in_thread(task)
-
-    def on_send(self, *_):
-        self.show_send_confirm()
-
-    def do_send(self):
+    def _popup_delete_sender(self, *_):
         if not self.senders:
-            self.set_status("Please add at least one sender.")
-            return
-        if not self.recipients:
-            self.set_status("Please add at least one recipient.")
+            self._toast("No senders to delete.")
             return
 
-        max_emails = self.max_emails_value or 20
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        ti_idx = TextInput(hint_text="Sender number to delete (e.g. 1)", multiline=False, **fkw())
 
-        to_emails = [x.strip() for x in self.recipients if str(x).strip()]
-        self.set_buttons_enabled(False)
-        self.set_status("Sending...")
+        btns = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(6))
+        btn_ok = Button(text="Delete", **fkw())
+        btn_cancel = Button(text="Cancel", **fkw())
+        btns.add_widget(btn_ok); btns.add_widget(btn_cancel)
 
-        def task():
+        content.add_widget(ti_idx)
+        content.add_widget(btns)
+
+        pop = Popup(title="Delete Sender", content=content, size_hint=(0.9, 0.5))
+        btn_cancel.bind(on_release=pop.dismiss)
+
+        def _del(*_):
             try:
-                items, total = collect_news_safe()
+                idx = int(ti_idx.text.strip()) - 1
+                if 0 <= idx < len(self.senders):
+                    self.senders.pop(idx)
+                    self._save_config()
+                    self.refresh_senders_list()
+                    pop.dismiss()
+            except:
+                pass
 
-                unique_items = []
-                seen = set()
-                for t, s in items:
-                    if t not in seen:
-                        unique_items.append((t, s))
-                        seen.add(t)
+        btn_ok.bind(on_release=_del)
+        pop.open()
 
-                new_items = [(t, s) for (t, s) in unique_items if t not in self.sent_titles]
-                batch_items = new_items[:max_emails]
+    def _popup_add_recipient(self, *_):
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        ti_email = TextInput(hint_text="Recipient email", multiline=False, **fkw())
 
-                if not batch_items:
-                    Clock.schedule_once(
-                        lambda dt: (
-                            self.set_status("No new items to send."),
-                            self.set_buttons_enabled(True),
-                        ),
-                        0,
-                    )
-                    return
+        btns = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(6))
+        btn_ok = Button(text="Add", **fkw())
+        btn_cancel = Button(text="Cancel", **fkw())
+        btns.add_widget(btn_ok); btns.add_widget(btn_cancel)
 
-                results = []
-                success_count = 0
-                sent_per_sender = {}
+        content.add_widget(ti_email)
+        content.add_widget(btns)
 
-                for idx, s in enumerate(self.senders):
-                    sender_email = s.get("email", "").strip()
-                    app_pass = s.get("password", "").strip()
+        pop = Popup(title="Add Recipient", content=content, size_hint=(0.9, 0.5))
+        btn_cancel.bind(on_release=pop.dismiss)
 
-                    if not sender_email or not app_pass:
-                        results.append(f"{sender_email or 'Unknown'}: skipped (missing data)")
-                        sent_per_sender[sender_email or "Unknown"] = 0
-                        continue
+        def _add(*_):
+            email = ti_email.text.strip()
+            if email:
+                self.recipients.append({"email": email, "enabled": True})
+                self._save_config()
+                self.refresh_recipients_list()
+                pop.dismiss()
 
-                    def progress_cb(cur, tot, se=sender_email):
-                        Clock.schedule_once(
-                            lambda dt, _se=se, _c=cur, _t=tot: self.set_status(
-                                f"Sending...\n{_se}\nEmail {_c}/{_t}"
-                            ),
-                            0,
-                        )
+        btn_ok.bind(on_release=_add)
+        pop.open()
 
-                    ok, msg = send_emails_safe(
-                        sender_email, app_pass, to_emails, batch_items, progress_cb=progress_cb
-                    )
+    def _popup_delete_recipient(self, *_):
+        if not self.recipients:
+            self._toast("No recipients to delete.")
+            return
 
-                    if ok:
-                        success_count += 1
-                        results.append(f"{sender_email}: OK ({len(batch_items)} items)")
-                        sent_per_sender[sender_email] = len(batch_items)
-                    else:
-                        results.append(f"{sender_email}: FAIL ({msg})")
-                        sent_per_sender[sender_email] = 0
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        ti_idx = TextInput(hint_text="Recipient number to delete (e.g. 1)", multiline=False, **fkw())
 
-                    if idx < len(self.senders) - 1:
-                        time.sleep(random.uniform(*SENDER_DELAY_RANGE))
+        btns = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(6))
+        btn_ok = Button(text="Delete", **fkw())
+        btn_cancel = Button(text="Cancel", **fkw())
+        btns.add_widget(btn_ok); btns.add_widget(btn_cancel)
 
-                if success_count > 0:
-                    sent_now_titles = [t for t, _ in batch_items]
-                    append_sent_titles(self.sent_titles_path, sent_now_titles)
-                    self.sent_titles.update(sent_now_titles)
+        content.add_widget(ti_idx)
+        content.add_widget(btns)
 
-                remaining_after = len([t for t, _ in new_items if t not in set(t for t, _ in batch_items)])
+        pop = Popup(title="Delete Recipient", content=content, size_hint=(0.9, 0.5))
+        btn_cancel.bind(on_release=pop.dismiss)
 
-                out = (
-                    "Finished.\n"
-                    f"Batch sent: {len(batch_items)}\n"
-                    f"Successful senders: {success_count}/{len(self.senders)}\n"
-                    f"Sent feeds total: {len(self.sent_titles)}\n"
-                    f"Remaining feeds total: {remaining_after}\n\n"
-                    + "\n".join(results)
-                )
+        def _del(*_):
+            try:
+                idx = int(ti_idx.text.strip()) - 1
+                if 0 <= idx < len(self.recipients):
+                    self.recipients.pop(idx)
+                    self._save_config()
+                    self.refresh_recipients_list()
+                    pop.dismiss()
+            except:
+                pass
 
-                Clock.schedule_once(
-                    lambda dt: (
-                        self.set_status(out),
-                        self.set_buttons_enabled(True),
-                    ),
-                    0,
-                )
+        btn_ok.bind(on_release=_del)
+        pop.open()
 
-            except Exception as e:
-                tb = traceback.format_exc()
-                Clock.schedule_once(
-                    lambda dt: (
-                        self.set_status(f"Error:\n{e}\n\n{tb}"),
-                        self.set_buttons_enabled(True),
-                    ),
-                    0,
-                )
+    def _popup_add_feed(self, *_):
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        ti_url = TextInput(hint_text="RSS feed URL", multiline=False, **fkw())
 
-        self.run_in_thread(task)
+        btns = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(6))
+        btn_ok = Button(text="Add", **fkw())
+        btn_cancel = Button(text="Cancel", **fkw())
+        btns.add_widget(btn_ok); btns.add_widget(btn_cancel)
+
+        content.add_widget(ti_url)
+        content.add_widget(btns)
+
+        pop = Popup(title="Add Feed", content=content, size_hint=(0.9, 0.5))
+        btn_cancel.bind(on_release=pop.dismiss)
+
+        def _add(*_):
+            url = ti_url.text.strip()
+            if url:
+                self.feeds.append(url)
+                self._save_config()
+                self.refresh_feeds_list()
+                pop.dismiss()
+
+        btn_ok.bind(on_release=_add)
+        pop.open()
+
+    def _popup_delete_feed(self, *_):
+        if not self.feeds:
+            self._toast("No feeds to delete.")
+            return
+
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        ti_idx = TextInput(hint_text="Feed number to delete (e.g. 1)", multiline=False, **fkw())
+
+        btns = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(6))
+        btn_ok = Button(text="Delete", **fkw())
+        btn_cancel = Button(text="Cancel", **fkw())
+        btns.add_widget(btn_ok); btns.add_widget(btn_cancel)
+
+        content.add_widget(ti_idx)
+        content.add_widget(btns)
+
+        pop = Popup(title="Delete Feed", content=content, size_hint=(0.9, 0.5))
+        btn_cancel.bind(on_release=pop.dismiss)
+
+        def _del(*_):
+            try:
+                idx = int(ti_idx.text.strip()) - 1
+                if 0 <= idx < len(self.feeds):
+                    self.feeds.pop(idx)
+                    self._save_config()
+                    self.refresh_feeds_list()
+                    pop.dismiss()
+            except:
+                pass
+
+        btn_ok.bind(on_release=_del)
+        pop.open()
+
+    # -----------------------------
+    def _toast(self, msg):
+        self.status_label.text = msg
+
+    def _append_status(self, msg):
+        self.status_label.text += f"\n{msg}"
+
+    # -----------------------------
+    def collect_news_safe(self, *_):
+        if self._loading:
+            return
+        self._loading = True
+        self.status_label.text = "Collecting news..."
+        threading.Thread(target=self._collect_news_thread, daemon=True).start()
+
+    def _collect_news_thread(self):
+        try:
+            session = requests.Session()
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+
+            all_items = []
+            for url in self.feeds:
+                try:
+                    r = session.get(url, timeout=10,
+                                    headers={"User-Agent": "Mozilla/5.0"},
+                                    verify=certifi.where())
+                    parsed = feedparser.parse(r.text, ssl_context=ssl_ctx)
+
+                    for e in parsed.entries[:10]:
+                        title = e.get("title", "")
+                        link = e.get("link", "")
+                        all_items.append((title, link))
+                except Exception:
+                    continue
+
+            if not all_items:
+                Clock.schedule_once(lambda *_: self._toast("No news collected."))
+                return
+
+            lines = []
+            for i, (title, link) in enumerate(all_items, start=1):
+                lines.append(f"{i}. {title}\n{link}\n")
+
+            text_out = "\n".join(lines)
+            Clock.schedule_once(lambda *_: self._toast(text_out))
+
+        except Exception:
+            err = traceback.format_exc()
+            Clock.schedule_once(lambda *_: self._toast("Error collecting news:\n" + err))
+        finally:
+            self._loading = False
+
+    # -----------------------------
+    def send_emails_safe(self, *_):
+        enabled_recs = [r["email"] for r in self.recipients if r.get("enabled")]
+        if not enabled_recs:
+            self._toast("No enabled recipients.")
+            return
+        if not self.senders:
+            self._toast("No senders configured.")
+            return
+
+        self._toast("Sending emails...")
+        threading.Thread(target=self._send_emails_thread, daemon=True).start()
+
+    def _send_emails_thread(self):
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            body = self.status_label.text.strip()
+            if not body or body.lower().startswith("collecting"):
+                body = "No news content yet."
+
+            subject = f"News Digest - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+            enabled_recs = [r["email"] for r in self.recipients if r.get("enabled")]
+
+            for s in self.senders:
+                email = s.get("email")
+                app_pass = s.get("app_password")
+
+                if not email or not app_pass:
+                    continue
+
+                try:
+                    msg = MIMEMultipart()
+                    msg["From"] = email
+                    msg["To"] = ", ".join(enabled_recs)
+                    msg["Subject"] = subject
+                    msg.attach(MIMEText(body, "plain", "utf-8"))
+
+                    server = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20)
+                    server.login(email, app_pass)
+                    server.sendmail(email, enabled_recs, msg.as_string())
+                    server.quit()
+
+                    Clock.schedule_once(lambda *_: self._append_status(f"✅ Sent from {email}"))
+
+                except Exception as e:
+                    Clock.schedule_once(lambda *_: self._append_status(f"❌ Failed {email}: {e}"))
+
+                time.sleep(2)
+
+            Clock.schedule_once(lambda *_: self._append_status("Done."))
+
+        except Exception:
+            err = traceback.format_exc()
+            Clock.schedule_once(lambda *_: self._append_status("Error sending:\n" + err))
 
 
 if __name__ == "__main__":
