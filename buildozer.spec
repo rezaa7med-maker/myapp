@@ -7,7 +7,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 
 version = 0.1
-requirements = python3,kivy==2.3.0,requests,feedparser==6.0.11,certifi,pyjnius
+requirements = python3,kivy==2.3.0,requests,feedparser==6.0.11,certifi,pyjnius,arabic-reshaper,python-bidi
 
 orientation = portrait
 fullscreen = 0
