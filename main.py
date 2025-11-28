@@ -289,20 +289,16 @@ class RecipientRow(BoxLayout):
 # DISABLED MAIN SCROLLVIEW (ONLY FOR LAYOUT)
 # -------------------------------------------------------------------
 class DisabledMainScroll(ScrollView):
+    # ScrollView فقط اندازه‌گیری/چیدمان بده، ولی هیچ تاچی رو برای اسکرول نگیره.
     def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
-            return super(ScrollView, self).on_touch_down(touch)
-        return super().on_touch_down(touch)
+        # مستقیم مثل Widget رفتار کن تا دکمه‌ها تاچ بگیرن
+        return super(ScrollView, self).on_touch_down(touch)
 
     def on_touch_move(self, touch):
-        if self.collide_point(*touch.pos):
-            return super(ScrollView, self).on_touch_move(touch)
-        return super().on_touch_move(touch)
+        return super(ScrollView, self).on_touch_move(touch)
 
     def on_touch_up(self, touch):
-        if self.collide_point(*touch.pos):
-            return super(ScrollView, self).on_touch_up(touch)
-        return super().on_touch_up(touch)
+        return super(ScrollView, self).on_touch_up(touch)
 
 
 # -------------------------------------------------------------------
