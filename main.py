@@ -292,13 +292,18 @@ class NewsApp(App):
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             View = autoclass("android.view.View")
             LayoutParams = autoclass("android.view.WindowManager$LayoutParams")
+
             activity = PythonActivity.mActivity
             window = activity.getWindow()
             decor = window.getDecorView()
 
             window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
             window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
-            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
+
+            decor.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
+                View.SYSTEM_UI_FLAG_VISIBLE
+            )
         except Exception:
             pass
 
@@ -409,12 +414,13 @@ class NewsApp(App):
 
     def on_start(self):
         Window.fullscreen = False
-        self._apply_system_ui()
-        Clock.schedule_interval(self._apply_system_ui, 0.5)
+        Clock.schedule_once(self._apply_system_ui, 0)
+        Clock.schedule_once(self._apply_system_ui, 0.5)
+        Clock.schedule_once(self._apply_system_ui, 1.0)
+
         Window.bind(on_keyboard=self.on_keyboard)
-        Window.bind(on_draw=self._apply_system_ui)
-        Window.bind(on_resize=self._apply_system_ui)
         Window.bind(on_focus=self._apply_system_ui)
+        Window.bind(on_resize=self._apply_system_ui)
 
     def on_resume(self):
         Window.fullscreen = False
