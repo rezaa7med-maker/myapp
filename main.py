@@ -29,8 +29,22 @@ from kivy.graphics import Color, Line, Rectangle
 from kivy.utils import platform
 
 # ============================================================
-# ✅ (1) FONT PATCH — صفر ریسک Vazirmatn
-# اگر فونت نباشه، APP_FONT=None میشه و هیچ کرشی رخ نمی‌ده
+# ✅ RTL + Persian shaping patch (قطعی)
+# ============================================================
+def rtl(s: str) -> str:
+    try:
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+        return get_display(arabic_reshaper.reshape(s))
+    except Exception:
+        return s  # اگر کتابخونه نبود، کرش نکنه
+
+def tr(s: str) -> str:
+    return rtl(s)
+
+# ============================================================
+# ✅ FONT PATCH — صفر ریسک Vazirmatn
+# اگر فونت نباشه APP_FONT=None میشه و هیچ کرشی رخ نمی‌ده
 # ============================================================
 from kivy.resources import resource_find
 
@@ -48,19 +62,6 @@ for p in FONT_CANDIDATES:
 
 def fkw():
     return {"font_name": APP_FONT} if APP_FONT else {}
-
-# ============================================================
-# ✅ RTL + Persian shaping patch (صفر ریسک)
-# اگر کتابخانه‌ها نبودن، فقط متن عادی نمایش داده میشه
-# ============================================================
-def rtl(txt: str) -> str:
-    try:
-        import arabic_reshaper
-        from bidi.algorithm import get_display
-        reshaped = arabic_reshaper.reshape(txt)
-        return get_display(reshaped)
-    except Exception:
-        return txt
 
 # -------------------------------------------------------------------
 # Fix for libraries that still call base64.decodestring/encodestring
@@ -249,7 +250,7 @@ class SenderRow(BoxLayout):
         )
         self.lbl = Label(
             text=text,
-            halign="left",
+            halign="right",
             valign="middle",
             size_hint_x=0.89,
             font_size="15sp",
@@ -276,7 +277,7 @@ class RecipientRow(BoxLayout):
         )
         self.lbl = Label(
             text=text,
-            halign="left",
+            halign="right",
             valign="middle",
             size_hint_x=0.89,
             font_size="15sp",
@@ -313,6 +314,7 @@ class NewsApp(App):
                 window = activity.getWindow()
                 decor = window.getDecorView()
 
+                # خارج شدن از فول‌اسکرین
                 window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
@@ -336,6 +338,7 @@ class NewsApp(App):
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
+        # بک‌گراند ملایم
         with root.canvas.before:
             Color(0.08, 0.08, 0.08, 1)
             self._app_bg = Rectangle(pos=root.pos, size=root.size)
@@ -346,18 +349,17 @@ class NewsApp(App):
 
         root.bind(pos=_upd_bg, size=_upd_bg)
 
+        # ----- TOP BAR -----
         top_bar = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
             height=BTN_HEIGHT,
         )
 
-        # مارک‌آپ رو حفظ می‌کنیم، فقط خود کلمه RTL میشه
         menu_btn = Button(
-            text=f"[b]{rtl('منو')}[/b]",
-            markup=True,
+            text=tr("منو"),
             size_hint=(None, None),
-            width=BTN_HEIGHT,
+            width=BTN_HEIGHT*1.4,
             height=BTN_HEIGHT,
             font_size="14sp",
             background_normal="",
@@ -370,6 +372,7 @@ class NewsApp(App):
         top_bar.add_widget(Widget())
         root.add_widget(top_bar)
 
+        # ----- MAIN SCROLL -----
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True)
         content = BoxLayout(
             orientation="vertical",
@@ -381,14 +384,16 @@ class NewsApp(App):
         scroll.add_widget(content)
         root.add_widget(scroll)
 
+        # senders / recipients
         self.senders_box = self.build_senders_box()
         content.add_widget(self.senders_box)
 
         self.recipients_box = self.build_recipients_box()
         content.add_widget(self.recipients_box)
 
+        # max emails button
         self.max_emails_btn = Button(
-            text=rtl(f"تعداد ایمیل ارسالی: {self.max_emails_value}"),
+            text=tr(f"تعداد ایمیل ارسالی: {self.max_emails_value}"),
             size_hint=(1, None),
             height=BTN_HEIGHT,
             font_size="16sp",
@@ -400,6 +405,7 @@ class NewsApp(App):
         self.max_emails_btn.bind(on_release=lambda *_: self.show_max_emails_popup())
         content.add_widget(self.max_emails_btn)
 
+        # test/send buttons
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
@@ -407,13 +413,13 @@ class NewsApp(App):
             spacing=dp(10),
         )
         self.test_btn = Button(
-            text=rtl("تست فید"),
+            text=tr("تست فید"),
             background_normal="",
             background_color=LIGHT_PURPLE,
             **fkw()
         )
         self.send_btn = Button(
-            text=rtl("ارسال"),
+            text=tr("ارسال"),
             background_normal="",
             background_color=LIGHT_GREEN,
             **fkw()
@@ -424,21 +430,19 @@ class NewsApp(App):
         btn_row.add_widget(self.send_btn)
         content.add_widget(btn_row)
 
+        # status label
         self.status_label = Label(
-            text=rtl("آماده"),
+            text=tr("آماده..."),
             font_size="16sp",
             size_hint=(1, None),
             height=dp(220),
-            halign="left",
+            halign="right",
             valign="top",
             **fkw()
         )
-
-        self.status_label.halign = "right"
-        self.status_label.valign = "top"
         self.status_label.bind(size=self.status_label.setter("text_size"))
-
         content.add_widget(self.status_label)
+
         content.add_widget(Widget(size_hint=(1, None), height=dp(90)))
 
         self.load_config()
@@ -452,7 +456,6 @@ class NewsApp(App):
         Clock.schedule_once(self._apply_system_ui, 0)
         Clock.schedule_once(self._apply_system_ui, 0.5)
         Clock.schedule_once(self._apply_system_ui, 1.0)
-
         Window.bind(on_keyboard=self.on_keyboard)
         Window.bind(on_focus=self._apply_system_ui)
         Window.bind(on_resize=self._apply_system_ui)
@@ -468,14 +471,15 @@ class NewsApp(App):
             return True
         return False
 
+    # ---------------- MENU ----------------
     def show_menu_popup(self):
         wrapper = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
-        reset_btn = Button(text=rtl("بازنشانی فید"), size_hint_y=None, height=BTN_HEIGHT, **fkw())
-        exit_btn = Button(text=rtl("خروج"), size_hint_y=None, height=BTN_HEIGHT, **fkw())
+        reset_btn = Button(text=tr("بازنشانی فید"), size_hint_y=None, height=BTN_HEIGHT, **fkw())
+        exit_btn = Button(text=tr("خروج"), size_hint_y=None, height=BTN_HEIGHT, **fkw())
         wrapper.add_widget(reset_btn)
         wrapper.add_widget(exit_btn)
         popup = Popup(
-            title=rtl("منو"),
+            title=tr("منو"),
             content=wrapper,
             size_hint=(0.6, None),
             height=dp(200),
@@ -494,51 +498,52 @@ class NewsApp(App):
         except Exception:
             pass
         self.sent_titles = set()
-        self.set_status(rtl("بازنشانی فید انجام شد."))
+        self.set_status("فیدها بازنشانی شدند.")
 
+    # ---------------- CONFIRMS ----------------
     def show_exit_confirm(self):
         self.show_confirm(
-            title=rtl("خروج؟"),
-            message=rtl("آیا می‌خواهید خارج شوید؟"),
-            yes_text=rtl("بله"),
-            no_text=rtl("خیر"),
+            title="خروج",
+            message="آیا مطمئن هستید؟",
+            yes_text="بله",
+            no_text="خیر",
             on_yes=self.stop,
         )
 
     def show_send_confirm(self):
         self.show_confirm(
-            title=rtl("ارسال؟"),
-            message=rtl("آیا مطمئن هستید؟"),
-            yes_text=rtl("بله"),
-            no_text=rtl("خیر"),
+            title="ارسال",
+            message="آیا مطمئن هستید؟",
+            yes_text="بله",
+            no_text="خیر",
             on_yes=self.do_send,
         )
 
     def show_delete_confirm(self, on_yes):
         self.show_confirm(
-            title=rtl("حذف؟"),
-            message=rtl("آیا مطمئن هستید؟"),
-            yes_text=rtl("بله"),
-            no_text=rtl("خیر"),
+            title="حذف",
+            message="آیا مطمئن هستید؟",
+            yes_text="بله",
+            no_text="خیر",
             on_yes=on_yes,
         )
 
     def show_confirm(self, title, message, yes_text, no_text, on_yes):
         content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
-        content.add_widget(Label(text=message, **fkw()))
+        content.add_widget(Label(text=tr(message), halign="right", **fkw()))
         btns = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
             height=dp(44),
             spacing=dp(6),
         )
-        yes_btn = Button(text=yes_text, background_normal="", background_color=NORMAL_GREEN, **fkw())
-        no_btn = Button(text=no_text, background_normal="", background_color=RED, **fkw())
+        yes_btn = Button(text=tr(yes_text), background_normal="", background_color=NORMAL_GREEN, **fkw())
+        no_btn = Button(text=tr(no_text), background_normal="", background_color=RED, **fkw())
         btns.add_widget(yes_btn)
         btns.add_widget(no_btn)
         content.add_widget(btns)
         popup = Popup(
-            title=title,
+            title=tr(title),
             content=content,
             size_hint=(0.85, None),
             height=dp(200),
@@ -548,6 +553,7 @@ class NewsApp(App):
         no_btn.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
 
+    # ---------------- SENDERS UI ----------------
     def build_senders_box(self):
         box = BoxLayout(
             orientation="vertical",
@@ -564,17 +570,17 @@ class NewsApp(App):
         )
         header.add_widget(
             Label(
-                text="Senders",
-                halign="left",
+                text=tr("فرستنده‌ها"),
+                halign="right",
                 valign="middle",
                 font_size="16sp",
                 **fkw()
             )
         )
         add_btn = Button(
-            text=rtl("افزودن فرستنده"),
+            text=tr("افزودن فرستنده"),
             size_hint=(None, None),
-            width=dp(140),
+            width=dp(160),
             height=BTN_HEIGHT,
             font_size="14sp",
             background_normal="",
@@ -610,6 +616,7 @@ class NewsApp(App):
         box.add_widget(list_container)
         return box
 
+    # ---------------- RECIPIENTS UI ----------------
     def build_recipients_box(self):
         box = BoxLayout(
             orientation="vertical",
@@ -626,17 +633,17 @@ class NewsApp(App):
         )
         header.add_widget(
             Label(
-                text="Recipients",
-                halign="left",
+                text=tr("گیرنده‌ها"),
+                halign="right",
                 valign="middle",
                 font_size="16sp",
                 **fkw()
             )
         )
         add_btn = Button(
-            text=rtl("افزودن گیرنده"),
+            text=tr("افزودن گیرنده"),
             size_hint=(None, None),
-            width=dp(140),
+            width=dp(160),
             height=BTN_HEIGHT,
             font_size="14sp",
             background_normal="",
@@ -672,6 +679,7 @@ class NewsApp(App):
         box.add_widget(list_container)
         return box
 
+    # ---------------- LIST REFRESH ----------------
     def refresh_senders_list(self):
         self.senders_list_layout.clear_widgets()
         for idx, s in enumerate(self.senders):
@@ -695,6 +703,7 @@ class NewsApp(App):
             )
             self.recipients_list_layout.add_widget(row)
 
+    # ---------------- FORMS ----------------
     def show_sender_form_popup(self, edit_index=None):
         is_edit = edit_index is not None
         initial_email = self.senders[edit_index]["email"] if is_edit else ""
@@ -707,10 +716,10 @@ class NewsApp(App):
         )
         wrapper.add_widget(
             Label(
-                text=rtl("آدرس ایمیل"),
+                text=tr("آدرس ایمیل"),
                 size_hint_y=None,
                 height=dp(28),
-                halign="left",
+                halign="right",
                 valign="middle",
                 **fkw()
             )
@@ -728,10 +737,10 @@ class NewsApp(App):
 
         wrapper.add_widget(
             Label(
-                text=rtl("اپ پسورد"),
+                text=tr("اپ پسورد"),
                 size_hint_y=None,
                 height=dp(28),
-                halign="left",
+                halign="right",
                 valign="middle",
                 **fkw()
             )
@@ -754,14 +763,14 @@ class NewsApp(App):
             height=dp(48),
             spacing=dp(8),
         )
-        save_btn = Button(text=rtl("ذخیره"), background_normal="", background_color=NORMAL_GREEN, **fkw())
-        cancel_btn = Button(text=rtl("خیر"), background_normal="", background_color=RED, **fkw())
+        save_btn = Button(text=tr("ذخیره"), background_normal="", background_color=NORMAL_GREEN, **fkw())
+        cancel_btn = Button(text=tr("خیر"), background_normal="", background_color=RED, **fkw())
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
 
         popup = Popup(
-            title=rtl("افزودن فرستنده") if not is_edit else rtl("ویرایش فرستنده"),
+            title=tr("ویرایش فرستنده" if is_edit else "افزودن فرستنده"),
             content=wrapper,
             size_hint=(0.92, None),
             height=dp(320),
@@ -796,10 +805,10 @@ class NewsApp(App):
         )
         wrapper.add_widget(
             Label(
-                text=rtl("آدرس ایمیل"),
+                text=tr("آدرس ایمیل"),
                 size_hint_y=None,
                 height=dp(28),
-                halign="left",
+                halign="right",
                 valign="middle",
                 **fkw()
             )
@@ -821,14 +830,14 @@ class NewsApp(App):
             height=dp(48),
             spacing=dp(8),
         )
-        save_btn = Button(text=rtl("ذخیره"), background_normal="", background_color=NORMAL_GREEN, **fkw())
-        cancel_btn = Button(text=rtl("خیر"), background_normal="", background_color=RED, **fkw())
+        save_btn = Button(text=tr("ذخیره"), background_normal="", background_color=NORMAL_GREEN, **fkw())
+        cancel_btn = Button(text=tr("خیر"), background_normal="", background_color=RED, **fkw())
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
 
         popup = Popup(
-            title=rtl("افزودن گیرنده") if not is_edit else rtl("ویرایش گیرنده"),
+            title=tr("ویرایش گیرنده" if is_edit else "افزودن گیرنده"),
             content=wrapper,
             size_hint=(0.92, None),
             height=dp(240),
@@ -859,10 +868,10 @@ class NewsApp(App):
         )
         wrapper.add_widget(
             Label(
-                text=rtl("تعداد ایمیل ارسالی"),
+                text=tr("تعداد ایمیل ارسالی"),
                 size_hint_y=None,
                 height=dp(28),
-                halign="left",
+                halign="right",
                 valign="middle",
                 **fkw()
             )
@@ -885,14 +894,14 @@ class NewsApp(App):
             height=dp(48),
             spacing=dp(8),
         )
-        save_btn = Button(text=rtl("ذخیره"), background_normal="", background_color=NORMAL_GREEN, **fkw())
-        cancel_btn = Button(text=rtl("خیر"), background_normal="", background_color=RED, **fkw())
+        save_btn = Button(text=tr("ذخیره"), background_normal="", background_color=NORMAL_GREEN, **fkw())
+        cancel_btn = Button(text=tr("خیر"), background_normal="", background_color=RED, **fkw())
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
 
         popup = Popup(
-            title=rtl("تعداد ایمیل ارسالی"),
+            title=tr("تنظیم تعداد ایمیل ارسالی"),
             content=wrapper,
             size_hint=(0.92, None),
             height=dp(240),
@@ -907,7 +916,7 @@ class NewsApp(App):
                 val = 20
             self.max_emails_value = val
             if hasattr(self, "max_emails_btn"):
-                self.max_emails_btn.text = rtl(f"تعداد ایمیل ارسالی: {self.max_emails_value}")
+                self.max_emails_btn.text = tr(f"تعداد ایمیل ارسالی: {self.max_emails_value}")
             self.save_config()
             popup.dismiss()
 
@@ -915,6 +924,7 @@ class NewsApp(App):
         cancel_btn.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
 
+    # ---------------- DELETE ----------------
     def delete_sender(self, idx):
         try:
             del self.senders[idx]
@@ -948,13 +958,13 @@ class NewsApp(App):
                 except ValueError:
                     self.max_emails_value = 20
                 if hasattr(self, "max_emails_btn"):
-                    self.max_emails_btn.text = rtl(f"تعداد ایمیل ارسالی: {self.max_emails_value}")
+                    self.max_emails_btn.text = tr(f"تعداد ایمیل ارسالی: {self.max_emails_value}")
         except Exception:
             self.senders = []
             self.recipients = []
             self.max_emails_value = 20
             if hasattr(self, "max_emails_btn"):
-                self.max_emails_btn.text = rtl(f"تعداد ایمیل ارسالی: {self.max_emails_value}")
+                self.max_emails_btn.text = tr(f"تعداد ایمیل ارسالی: {self.max_emails_value}")
 
     def save_config(self):
         try:
@@ -974,7 +984,7 @@ class NewsApp(App):
 
     # ---------------- UI HELPERS ----------------
     def set_status(self, text):
-        self.status_label.text = text
+        self.status_label.text = rtl(text)
 
     def run_in_thread(self, func):
         threading.Thread(target=func, daemon=True).start()
@@ -986,7 +996,7 @@ class NewsApp(App):
     # ---------------- ACTIONS ----------------
     def on_test_rss(self, *_):
         self.set_buttons_enabled(False)
-        self.set_status(rtl("در حال تست فید ..."))
+        self.set_status("در حال تست فیدها...")
 
         def task():
             start = time.time()
@@ -1004,13 +1014,11 @@ class NewsApp(App):
                 Clock.schedule_once(
                     lambda dt: (
                         self.set_status(
-                            rtl(
-                                f"فید با موفقیت بررسی شد\n"
-                                f"تعداد کل: {len(unique_titles)}\n"
-                                f"ارسال‌شده: {sent_count}\n"
-                                f"باقی‌مانده: {remaining_new}\n"
-                                f"زمان: {elapsed:.1f}s"
-                            )
+                            f"تست فیدها موفق بود.\n"
+                            f"کل خبرها: {len(unique_titles)}\n"
+                            f"ارسال‌شده‌ها: {sent_count}\n"
+                            f"جدیدها: {remaining_new}\n"
+                            f"زمان: {elapsed:.1f} ثانیه"
                         ),
                         self.set_buttons_enabled(True),
                     ),
@@ -1020,7 +1028,7 @@ class NewsApp(App):
                 tb = traceback.format_exc()
                 Clock.schedule_once(
                     lambda dt: (
-                        self.set_status(rtl(f"خطا در فید:\n{e}\n\n{tb}")),
+                        self.set_status(f"خطا در دریافت فید:\n{e}\n\n{tb}"),
                         self.set_buttons_enabled(True),
                     ),
                     0,
@@ -1033,17 +1041,17 @@ class NewsApp(App):
 
     def do_send(self):
         if not self.senders:
-            self.set_status(rtl("لطفاً حداقل یک فرستنده اضافه کنید."))
+            self.set_status("لطفاً حداقل یک فرستنده اضافه کنید.")
             return
         if not self.recipients:
-            self.set_status(rtl("لطفاً حداقل یک گیرنده اضافه کنید."))
+            self.set_status("لطفاً حداقل یک گیرنده اضافه کنید.")
             return
 
         max_emails = self.max_emails_value or 20
         to_emails = [x.strip() for x in self.recipients if str(x).strip()]
 
         self.set_buttons_enabled(False)
-        self.set_status(rtl("در حال ارسال ..."))
+        self.set_status("در حال ارسال...")
 
         def task():
             try:
@@ -1061,7 +1069,7 @@ class NewsApp(App):
                 if not batch_items:
                     Clock.schedule_once(
                         lambda dt: (
-                            self.set_status(rtl("مورد جدیدی برای ارسال نیست.")),
+                            self.set_status("خبر جدیدی برای ارسال پیدا نشد."),
                             self.set_buttons_enabled(True),
                         ),
                         0,
@@ -1070,20 +1078,18 @@ class NewsApp(App):
 
                 results = []
                 success_count = 0
-                sent_per_sender = {}
 
                 for idx, s in enumerate(self.senders):
                     sender_email = s.get("email", "").strip()
                     app_pass = s.get("password", "").strip()
                     if not sender_email or not app_pass:
-                        results.append(rtl(f"{sender_email or 'Unknown'}: رد شد (اطلاعات ناقص)"))
-                        sent_per_sender[sender_email or "Unknown"] = 0
+                        results.append(f"{sender_email or 'نامشخص'}: رد شد (اطلاعات ناقص)")
                         continue
 
                     def progress_cb(cur, tot, se=sender_email):
                         Clock.schedule_once(
                             lambda dt, _se=se, _c=cur, _t=tot: self.set_status(
-                                rtl(f"در حال ارسال...\n{_se}\nایمیل {_c}/{_t}")
+                                f"در حال ارسال...\n{_se}\nایمیل {_c}/{_t}"
                             ),
                             0,
                         )
@@ -1094,11 +1100,9 @@ class NewsApp(App):
 
                     if ok:
                         success_count += 1
-                        results.append(rtl(f"{sender_email}: موفق ({len(batch_items)} مورد)"))
-                        sent_per_sender[sender_email] = len(batch_items)
+                        results.append(f"{sender_email}: موفق ({len(batch_items)} خبر)")
                     else:
-                        results.append(rtl(f"{sender_email}: ناموفق ({msg})"))
-                        sent_per_sender[sender_email] = 0
+                        results.append(f"{sender_email}: ناموفق ({msg})")
 
                     if idx < len(self.senders) - 1:
                         time.sleep(random.uniform(*SENDER_DELAY_RANGE))
@@ -1109,12 +1113,12 @@ class NewsApp(App):
                     self.sent_titles.update(sent_now_titles)
 
                 remaining_after = len([t for t, _ in new_items if t not in set(t for t, _ in batch_items)])
-                out = rtl(
-                    "پایان ارسال.\n"
+                out = (
+                    "ارسال تمام شد.\n"
                     f"تعداد ارسال این مرحله: {len(batch_items)}\n"
                     f"فرستنده‌های موفق: {success_count}/{len(self.senders)}\n"
-                    f"کل ارسال‌شده‌ها: {len(self.sent_titles)}\n"
-                    f"کل باقی‌مانده‌ها: {remaining_after}\n\n"
+                    f"کل خبرهای ارسال‌شده: {len(self.sent_titles)}\n"
+                    f"خبرهای باقی‌مانده: {remaining_after}\n\n"
                     + "\n".join(results)
                 )
 
@@ -1129,7 +1133,7 @@ class NewsApp(App):
                 tb = traceback.format_exc()
                 Clock.schedule_once(
                     lambda dt: (
-                        self.set_status(rtl(f"خطا:\n{e}\n\n{tb}")),
+                        self.set_status(f"خطا:\n{e}\n\n{tb}"),
                         self.set_buttons_enabled(True),
                     ),
                     0,
