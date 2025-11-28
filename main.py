@@ -286,15 +286,33 @@ class RecipientRow(BoxLayout):
 
 
 # -------------------------------------------------------------------
-# SMALL DRAG / PARALLAX CONTAINER (NO MAIN SCROLL)
+# DISABLED MAIN SCROLLVIEW (ONLY FOR LAYOUT)
+# -------------------------------------------------------------------
+class DisabledMainScroll(ScrollView):
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            return super(ScrollView, self).on_touch_down(touch)
+        return super().on_touch_down(touch)
+
+    def on_touch_move(self, touch):
+        if self.collide_point(*touch.pos):
+            return super(ScrollView, self).on_touch_move(touch)
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if self.collide_point(*touch.pos):
+            return super(ScrollView, self).on_touch_up(touch)
+        return super().on_touch_up(touch)
+
+
+# -------------------------------------------------------------------
+# SMALL DRAG / PARALLAX CONTAINER
 # -------------------------------------------------------------------
 class ParallaxContainer(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._base_y = 0
-        self._start_touch_y = None
-        self.max_offset = dp(18)   # max movement (small)
-        self.factor = 0.12         # how much follow finger
+        self.max_offset = dp(18)
+        self.factor = 0.12
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
@@ -392,14 +410,16 @@ class NewsApp(App):
         top_bar.add_widget(Widget())
         root.add_widget(top_bar)
 
-        # NO MAIN ScrollView ANYMORE
+        scroll = DisabledMainScroll(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=False, bar_width=0)
         content = ParallaxContainer(
             orientation="vertical",
-            size_hint=(1, 1),
+            size_hint_y=None,
             padding=dp(10),
             spacing=dp(10),
         )
-        root.add_widget(content)
+        content.bind(minimum_height=content.setter("height"))
+        scroll.add_widget(content)
+        root.add_widget(scroll)
 
         self.senders_box = self.build_senders_box()
         content.add_widget(self.senders_box)
