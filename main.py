@@ -26,6 +26,7 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.graphics import Color, Line, Rectangle
+from kivy.animation import Animation
 
 
 # -------------------------------------------------------------------
@@ -285,6 +286,42 @@ class RecipientRow(BoxLayout):
 
 
 # -------------------------------------------------------------------
+# SMALL DRAG / PARALLAX CONTAINER (NO MAIN SCROLL)
+# -------------------------------------------------------------------
+class ParallaxContainer(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._base_y = 0
+        self._start_touch_y = None
+        self.max_offset = dp(18)   # max movement (small)
+        self.factor = 0.12         # how much follow finger
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            touch.ud["parallax_start_y"] = touch.y
+            touch.ud["parallax_base_y"] = self.y
+        return super().on_touch_down(touch)
+
+    def on_touch_move(self, touch):
+        if "parallax_start_y" in touch.ud:
+            dy = touch.y - touch.ud["parallax_start_y"]
+            offset = dy * self.factor
+            if offset > self.max_offset:
+                offset = self.max_offset
+            elif offset < -self.max_offset:
+                offset = -self.max_offset
+            self.y = touch.ud["parallax_base_y"] + offset
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if "parallax_base_y" in touch.ud:
+            base_y = touch.ud["parallax_base_y"]
+            Animation.cancel_all(self, "y")
+            Animation(y=base_y, d=0.12, t="out_quad").start(self)
+        return super().on_touch_up(touch)
+
+
+# -------------------------------------------------------------------
 # MAIN APP
 # -------------------------------------------------------------------
 from kivy.utils import platform
@@ -309,15 +346,10 @@ class NewsApp(App):
                 window = activity.getWindow()
                 decor = window.getDecorView()
 
-                # ✅ فول‌اسکرین و ترنسلوسنت رو کامل بردار
                 window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
-
-                # ✅ اجبار به غیر فول‌اسکرین
                 window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
-
-                # ✅ فقط Visible — هیچ فلگ immersive یا layout نذار
                 decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
 
             _do()
@@ -360,16 +392,14 @@ class NewsApp(App):
         top_bar.add_widget(Widget())
         root.add_widget(top_bar)
 
-        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True)
-        content = BoxLayout(
+        # NO MAIN ScrollView ANYMORE
+        content = ParallaxContainer(
             orientation="vertical",
-            size_hint_y=None,
+            size_hint=(1, 1),
             padding=dp(10),
             spacing=dp(10),
         )
-        content.bind(minimum_height=content.setter("height"))
-        scroll.add_widget(content)
-        root.add_widget(scroll)
+        root.add_widget(content)
 
         self.senders_box = self.build_senders_box()
         content.add_widget(self.senders_box)
