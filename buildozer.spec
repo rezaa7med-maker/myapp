@@ -17,9 +17,7 @@ android.archs = arm64-v8a, armeabi-v7a
 android.accept_sdk_license = True
 android.sdk_build_tools = 34.0.0
 
-android.fullscreen = 0
-android.immersive_mode = 0
-android.hide_statusbar = False
+android.enable_immersive_mode = False
 
 [buildozer]
 log_level = 2
