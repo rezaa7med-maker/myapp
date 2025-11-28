@@ -240,7 +240,7 @@ class SenderRow(BoxLayout):
             valign="middle",
             size_hint_x=0.89,
             font_size="15sp",
-            **fkw()  # ✅ فونت صفر ریسک
+            **fkw()
         )
         self.lbl.bind(
             size=lambda inst, *_: setattr(
@@ -267,7 +267,7 @@ class RecipientRow(BoxLayout):
             valign="middle",
             size_hint_x=0.89,
             font_size="15sp",
-            **fkw()  # ✅ فونت صفر ریسک
+            **fkw()
         )
         self.lbl.bind(
             size=lambda inst, *_: setattr(
@@ -323,9 +323,6 @@ class NewsApp(App):
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
-        # ============================================================
-        # ✅ (3) BACKGROUND PATCH — بک‌گراند ملایم کل اپ (کم‌ریسک)
-        # ============================================================
         with root.canvas.before:
             Color(0.08, 0.08, 0.08, 1)
             self._app_bg = Rectangle(pos=root.pos, size=root.size)
@@ -343,7 +340,7 @@ class NewsApp(App):
         )
 
         menu_btn = Button(
-            text="[b]MENU[/b]",
+            text="[b]منو[/b]",
             markup=True,
             size_hint=(None, None),
             width=BTN_HEIGHT,
@@ -352,7 +349,7 @@ class NewsApp(App):
             background_normal="",
             background_color=CREAM_WHITE,
             color=(0, 0, 0, 1),
-            **fkw()  # ✅ فونت صفر ریسک
+            **fkw()
         )
         menu_btn.bind(on_release=lambda *_: self.show_menu_popup())
         top_bar.add_widget(menu_btn)
@@ -377,14 +374,14 @@ class NewsApp(App):
         content.add_widget(self.recipients_box)
 
         self.max_emails_btn = Button(
-            text=f"Max emails: {self.max_emails_value}",
+            text=f"تعداد ایمیل ارسالی: {self.max_emails_value}",
             size_hint=(1, None),
             height=BTN_HEIGHT,
             font_size="16sp",
             background_normal="",
             background_color=CREAM_WHITE,
             color=(0, 0, 0, 1),
-            **fkw()  # ✅ فونت صفر ریسک
+            **fkw()
         )
         self.max_emails_btn.bind(on_release=lambda *_: self.show_max_emails_popup())
         content.add_widget(self.max_emails_btn)
@@ -396,13 +393,13 @@ class NewsApp(App):
             spacing=dp(10),
         )
         self.test_btn = Button(
-            text="Test RSS",
+            text="تست فید",
             background_normal="",
             background_color=LIGHT_PURPLE,
             **fkw()
         )
         self.send_btn = Button(
-            text="Send",
+            text="ارسال",
             background_normal="",
             background_color=LIGHT_GREEN,
             **fkw()
@@ -414,7 +411,7 @@ class NewsApp(App):
         content.add_widget(btn_row)
 
         self.status_label = Label(
-            text="Ready...",
+            text="آماده",
             font_size="16sp",
             size_hint=(1, None),
             height=dp(220),
@@ -423,9 +420,6 @@ class NewsApp(App):
             **fkw()
         )
 
-        # ============================================================
-        # ✅ (2) RTL PATCH — فقط خروجی راست‌چین (کم‌ریسک)
-        # ============================================================
         self.status_label.halign = "right"
         self.status_label.valign = "top"
         self.status_label.bind(size=self.status_label.setter("text_size"))
@@ -462,12 +456,12 @@ class NewsApp(App):
 
     def show_menu_popup(self):
         wrapper = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
-        reset_btn = Button(text="Reset RSS", size_hint_y=None, height=BTN_HEIGHT, **fkw())
-        exit_btn = Button(text="Exit", size_hint_y=None, height=BTN_HEIGHT, **fkw())
+        reset_btn = Button(text="بازنشانی فید", size_hint_y=None, height=BTN_HEIGHT, **fkw())
+        exit_btn = Button(text="خروج", size_hint_y=None, height=BTN_HEIGHT, **fkw())
         wrapper.add_widget(reset_btn)
         wrapper.add_widget(exit_btn)
         popup = Popup(
-            title="Menu",
+            title="منو",
             content=wrapper,
             size_hint=(0.6, None),
             height=dp(200),
@@ -486,32 +480,32 @@ class NewsApp(App):
         except Exception:
             pass
         self.sent_titles = set()
-        self.set_status("RSS reset.")
+        self.set_status("بازنشانی فید انجام شد.")
 
     def show_exit_confirm(self):
         self.show_confirm(
-            title="Exit?",
-            message="Exit?",
-            yes_text="Yes, I'm sure",
-            no_text="Cancel",
+            title="خروج؟",
+            message="آیا می‌خواهید خارج شوید؟",
+            yes_text="بله",
+            no_text="خیر",
             on_yes=self.stop,
         )
 
     def show_send_confirm(self):
         self.show_confirm(
-            title="Send?",
-            message="Send?",
-            yes_text="Yes, I'm sure",
-            no_text="Cancel",
+            title="ارسال؟",
+            message="آیا مطمئن هستید؟",
+            yes_text="بله",
+            no_text="خیر",
             on_yes=self.do_send,
         )
 
     def show_delete_confirm(self, on_yes):
         self.show_confirm(
-            title="Delete?",
-            message="Delete?",
-            yes_text="Yes, I'm sure",
-            no_text="Cancel",
+            title="حذف؟",
+            message="آیا مطمئن هستید؟",
+            yes_text="بله",
+            no_text="خیر",
             on_yes=on_yes,
         )
 
@@ -564,7 +558,7 @@ class NewsApp(App):
             )
         )
         add_btn = Button(
-            text="Add Sender",
+            text="افزودن فرستنده",
             size_hint=(None, None),
             width=dp(140),
             height=BTN_HEIGHT,
@@ -626,7 +620,7 @@ class NewsApp(App):
             )
         )
         add_btn = Button(
-            text="Add Recipient",
+            text="افزودن گیرنده",
             size_hint=(None, None),
             width=dp(140),
             height=BTN_HEIGHT,
@@ -699,7 +693,7 @@ class NewsApp(App):
         )
         wrapper.add_widget(
             Label(
-                text="Email Address",
+                text="آدرس ایمیل",
                 size_hint_y=None,
                 height=dp(28),
                 halign="left",
@@ -720,7 +714,7 @@ class NewsApp(App):
 
         wrapper.add_widget(
             Label(
-                text="App Password",
+                text="اپ پسورد",
                 size_hint_y=None,
                 height=dp(28),
                 halign="left",
@@ -746,14 +740,14 @@ class NewsApp(App):
             height=dp(48),
             spacing=dp(8),
         )
-        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN, **fkw())
-        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED, **fkw())
+        save_btn = Button(text="ذخیره", background_normal="", background_color=NORMAL_GREEN, **fkw())
+        cancel_btn = Button(text="خیر", background_normal="", background_color=RED, **fkw())
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
 
         popup = Popup(
-            title="Edit Sender" if is_edit else "Add Sender",
+            title="Edit Sender" if is_edit else "افزودن فرستنده",
             content=wrapper,
             size_hint=(0.92, None),
             height=dp(320),
@@ -768,8 +762,7 @@ class NewsApp(App):
             if is_edit:
                 self.senders[edit_index] = {"email": email, "password": password}
             else:
-                self.senders.append({"email": email, "password": password}
-                )
+                self.senders.append({"email": email, "password": password})
             self.save_config()
             self.refresh_senders_list()
             popup.dismiss()
@@ -789,7 +782,7 @@ class NewsApp(App):
         )
         wrapper.add_widget(
             Label(
-                text="Email Address",
+                text="آدرس ایمیل",
                 size_hint_y=None,
                 height=dp(28),
                 halign="left",
@@ -814,14 +807,14 @@ class NewsApp(App):
             height=dp(48),
             spacing=dp(8),
         )
-        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN, **fkw())
-        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED, **fkw())
+        save_btn = Button(text="ذخیره", background_normal="", background_color=NORMAL_GREEN, **fkw())
+        cancel_btn = Button(text="خیر", background_normal="", background_color=RED, **fkw())
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
 
         popup = Popup(
-            title="Edit Recipient" if is_edit else "Add Recipient",
+            title="Edit Recipient" if is_edit else "افزودن گیرنده",
             content=wrapper,
             size_hint=(0.92, None),
             height=dp(240),
@@ -852,7 +845,7 @@ class NewsApp(App):
         )
         wrapper.add_widget(
             Label(
-                text="Max emails",
+                text="تعداد ایمیل ارسالی",
                 size_hint_y=None,
                 height=dp(28),
                 halign="left",
@@ -878,14 +871,14 @@ class NewsApp(App):
             height=dp(48),
             spacing=dp(8),
         )
-        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN, **fkw())
-        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED, **fkw())
+        save_btn = Button(text="ذخیره", background_normal="", background_color=NORMAL_GREEN, **fkw())
+        cancel_btn = Button(text="خیر", background_normal="", background_color=RED, **fkw())
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
 
         popup = Popup(
-            title="Set Max Emails",
+            title="تعداد ایمیل ارسالی",
             content=wrapper,
             size_hint=(0.92, None),
             height=dp(240),
@@ -900,7 +893,7 @@ class NewsApp(App):
                 val = 20
             self.max_emails_value = val
             if hasattr(self, "max_emails_btn"):
-                self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
+                self.max_emails_btn.text = f"تعداد ایمیل ارسالی: {self.max_emails_value}"
             self.save_config()
             popup.dismiss()
 
@@ -941,13 +934,13 @@ class NewsApp(App):
                 except ValueError:
                     self.max_emails_value = 20
                 if hasattr(self, "max_emails_btn"):
-                    self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
+                    self.max_emails_btn.text = f"تعداد ایمیل ارسالی: {self.max_emails_value}"
         except Exception:
             self.senders = []
             self.recipients = []
             self.max_emails_value = 20
             if hasattr(self, "max_emails_btn"):
-                self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
+                self.max_emails_btn.text = f"تعداد ایمیل ارسالی: {self.max_emails_value}"
 
     def save_config(self):
         try:
@@ -979,7 +972,7 @@ class NewsApp(App):
     # ---------------- ACTIONS ----------------
     def on_test_rss(self, *_):
         self.set_buttons_enabled(False)
-        self.set_status("Testing RSS ...")
+        self.set_status("در حال تست فید ...")
 
         def task():
             start = time.time()
@@ -997,11 +990,11 @@ class NewsApp(App):
                 Clock.schedule_once(
                     lambda dt: (
                         self.set_status(
-                            f"RSS OK\n"
-                            f"Total items: {len(unique_titles)}\n"
-                            f"Sent items: {sent_count}\n"
-                            f"remaining: {remaining_new}\n"
-                            f"Elapsed time: {elapsed:.1f}s"
+                            f"فید با موفقیت بررسی شد\n"
+                            f"تعداد کل: {len(unique_titles)}\n"
+                            f"ارسال‌شده: {sent_count}\n"
+                            f"باقی‌مانده: {remaining_new}\n"
+                            f"زمان: {elapsed:.1f}s"
                         ),
                         self.set_buttons_enabled(True),
                     ),
@@ -1011,7 +1004,7 @@ class NewsApp(App):
                 tb = traceback.format_exc()
                 Clock.schedule_once(
                     lambda dt: (
-                        self.set_status(f"RSS Error:\n{e}\n\n{tb}"),
+                        self.set_status(f"خطا در فید:\n{e}\n\n{tb}"),
                         self.set_buttons_enabled(True),
                     ),
                     0,
@@ -1024,17 +1017,17 @@ class NewsApp(App):
 
     def do_send(self):
         if not self.senders:
-            self.set_status("Please add at least one sender.")
+            self.set_status("لطفاً حداقل یک فرستنده اضافه کنید.")
             return
         if not self.recipients:
-            self.set_status("Please add at least one recipient.")
+            self.set_status("لطفاً حداقل یک گیرنده اضافه کنید.")
             return
 
         max_emails = self.max_emails_value or 20
         to_emails = [x.strip() for x in self.recipients if str(x).strip()]
 
         self.set_buttons_enabled(False)
-        self.set_status("Sending...")
+        self.set_status("در حال ارسال ...")
 
         def task():
             try:
@@ -1052,7 +1045,7 @@ class NewsApp(App):
                 if not batch_items:
                     Clock.schedule_once(
                         lambda dt: (
-                            self.set_status("No new items to send."),
+                            self.set_status("مورد جدیدی برای ارسال نیست."),
                             self.set_buttons_enabled(True),
                         ),
                         0,
@@ -1067,14 +1060,14 @@ class NewsApp(App):
                     sender_email = s.get("email", "").strip()
                     app_pass = s.get("password", "").strip()
                     if not sender_email or not app_pass:
-                        results.append(f"{sender_email or 'Unknown'}: skipped (missing data)")
+                        results.append(f"{sender_email or 'Unknown'}: رد شد (اطلاعات ناقص)")
                         sent_per_sender[sender_email or "Unknown"] = 0
                         continue
 
                     def progress_cb(cur, tot, se=sender_email):
                         Clock.schedule_once(
                             lambda dt, _se=se, _c=cur, _t=tot: self.set_status(
-                                f"Sending...\n{_se}\nEmail {_c}/{_t}"
+                                f"در حال ارسال...\n{_se}\nایمیل {_c}/{_t}"
                             ),
                             0,
                         )
@@ -1085,10 +1078,10 @@ class NewsApp(App):
 
                     if ok:
                         success_count += 1
-                        results.append(f"{sender_email}: OK ({len(batch_items)} items)")
+                        results.append(f"{sender_email}: موفق ({len(batch_items)} مورد)")
                         sent_per_sender[sender_email] = len(batch_items)
                     else:
-                        results.append(f"{sender_email}: FAIL ({msg})")
+                        results.append(f"{sender_email}: ناموفق ({msg})")
                         sent_per_sender[sender_email] = 0
 
                     if idx < len(self.senders) - 1:
@@ -1101,11 +1094,11 @@ class NewsApp(App):
 
                 remaining_after = len([t for t, _ in new_items if t not in set(t for t, _ in batch_items)])
                 out = (
-                    "Finished.\n"
-                    f"Batch sent: {len(batch_items)}\n"
-                    f"Successful senders: {success_count}/{len(self.senders)}\n"
-                    f"Sent feeds total: {len(self.sent_titles)}\n"
-                    f"Remaining feeds total: {remaining_after}\n\n"
+                    "پایان ارسال.\n"
+                    f"تعداد ارسال این مرحله: {len(batch_items)}\n"
+                    f"فرستنده‌های موفق: {success_count}/{len(self.senders)}\n"
+                    f"کل ارسال‌شده‌ها: {len(self.sent_titles)}\n"
+                    f"کل باقی‌مانده‌ها: {remaining_after}\n\n"
                     + "\n".join(results)
                 )
 
@@ -1120,7 +1113,7 @@ class NewsApp(App):
                 tb = traceback.format_exc()
                 Clock.schedule_once(
                     lambda dt: (
-                        self.set_status(f"Error:\n{e}\n\n{tb}"),
+                        self.set_status(f"خطا:\n{e}\n\n{tb}"),
                         self.set_buttons_enabled(True),
                     ),
                     0,
