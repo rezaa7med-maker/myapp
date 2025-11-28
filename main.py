@@ -309,10 +309,15 @@ class NewsApp(App):
                 window = activity.getWindow()
                 decor = window.getDecorView()
 
+                # ✅ فول‌اسکرین و ترنسلوسنت رو کامل بردار
                 window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+
+                # ✅ اجبار به غیر فول‌اسکرین
                 window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
+
+                # ✅ فقط Visible — هیچ فلگ immersive یا layout نذار
                 decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
 
             _do()
@@ -356,7 +361,6 @@ class NewsApp(App):
         root.add_widget(top_bar)
 
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True)
-        scroll.scroll_wheel_distance = dp(300)
         content = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
