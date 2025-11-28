@@ -410,7 +410,7 @@ class NewsApp(App):
     def on_start(self):
         Window.fullscreen = False
         self._apply_system_ui()
-        Clock.schedule_interval(self._apply_system_ui, 0.2)
+        Clock.schedule_interval(self._apply_system_ui, 0.5)
         Window.bind(on_keyboard=self.on_keyboard)
         Window.bind(on_draw=self._apply_system_ui)
         Window.bind(on_resize=self._apply_system_ui)
