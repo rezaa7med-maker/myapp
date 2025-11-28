@@ -287,25 +287,41 @@ class RecipientRow(BoxLayout):
 # -------------------------------------------------------------------
 # MAIN APP
 # -------------------------------------------------------------------
+from kivy.utils import platform
+
 class NewsApp(App):
+
     def _apply_system_ui(self, *_):
+        if platform != "android":
+            return
+
         try:
+            from android.runnable import run_on_ui_thread
             from jnius import autoclass
-            PythonActivity = autoclass("org.kivy.android.PythonActivity")
-            View = autoclass("android.view.View")
-            LayoutParams = autoclass("android.view.WindowManager$LayoutParams")
 
-            activity = PythonActivity.mActivity
-            window = activity.getWindow()
-            decor = window.getDecorView()
+            @run_on_ui_thread
+            def _do():
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                LayoutParams = autoclass("android.view.WindowManager$LayoutParams")
+                View = autoclass("android.view.View")
 
-            window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
-            window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
+                activity = PythonActivity.mActivity
+                window = activity.getWindow()
+                decor = window.getDecorView()
 
-            decor.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
-                View.SYSTEM_UI_FLAG_VISIBLE
-            )
+                # ✅ فول‌اسکرین و ترنسلوسنت رو کامل بردار
+                window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
+                window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS)
+                window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+
+                # ✅ اجبار به غیر فول‌اسکرین
+                window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
+
+                # ✅ فقط Visible — هیچ فلگ immersive یا layout نذار
+                decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
+
+            _do()
+
         except Exception:
             pass
 
