@@ -24,6 +24,7 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
+      # ✅ کش رو نگه می‌داریم تا بیلدها سریع باشن
       - name: Cache build dependencies
         uses: actions/cache@v4
         with:
@@ -54,14 +55,27 @@ jobs:
           pip install --upgrade git+https://github.com/kivy/buildozer.git
           pip install cython==0.29.36
 
+      # ✅✅ کتابخونه‌های RTL رو قبل از بیلد نصب می‌کنیم
+      - name: Install extra python deps (RTL)
+        run: |
+          pip install arabic-reshaper python-bidi
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Accept Android SDK licenses
         run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses
 
+      # ✅✅ پاکسازی خیلی سبک
+      # فقط دایست/ریکوایرمنت پایتونی قبلی پاک میشه
+      # (SDK/NDK و بقیه چیزای سنگین داخل کش می‌مونن)
+      - name: Light clean (only python dist)
+        run: |
+          rm -rf .buildozer/android/platform/build-*/dists/*
+          rm -rf .buildozer/android/platform/build-*/requirements/*
+
       - name: Build APK
-        run: buildozer android debug
+        run: buildozer -v android debug
 
       - name: List APK outputs
         run: |
@@ -78,4 +92,3 @@ jobs:
             bin/*.apk
             .buildozer/android/platform/build-*/outputs/apk/debug/*.apk
           if-no-files-found: error
-          
