@@ -27,6 +27,7 @@ from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.graphics import Color, Line, Rectangle
 from kivy.animation import Animation
+from kivy.utils import platform
 
 
 # -------------------------------------------------------------------
@@ -286,60 +287,49 @@ class RecipientRow(BoxLayout):
 
 
 # -------------------------------------------------------------------
-# DISABLED MAIN SCROLLVIEW (ONLY FOR LAYOUT)
+# PARALLAX ROOT (NO SCROLL, SMALL DRAG MOVE)
 # -------------------------------------------------------------------
-class DisabledMainScroll(ScrollView):
-    # ScrollView فقط اندازه‌گیری/چیدمان بده، ولی هیچ تاچی رو برای اسکرول نگیره.
-    def on_touch_down(self, touch):
-        # مستقیم مثل Widget رفتار کن تا دکمه‌ها تاچ بگیرن
-        return super(ScrollView, self).on_touch_down(touch)
-
-    def on_touch_move(self, touch):
-        return super(ScrollView, self).on_touch_move(touch)
-
-    def on_touch_up(self, touch):
-        return super(ScrollView, self).on_touch_up(touch)
-
-
-# -------------------------------------------------------------------
-# SMALL DRAG / PARALLAX CONTAINER
-# -------------------------------------------------------------------
-class ParallaxContainer(BoxLayout):
+class ParallaxRoot(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.max_offset = dp(18)
-        self.factor = 0.12
+        self._start_y = 0
+        self._dragging = False
+        self._max_shift = dp(18)
+        self._threshold = dp(8)
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
-            touch.ud["parallax_start_y"] = touch.y
-            touch.ud["parallax_base_y"] = self.y
+            self._start_y = touch.y
+            self._dragging = False
         return super().on_touch_down(touch)
 
     def on_touch_move(self, touch):
-        if "parallax_start_y" in touch.ud:
-            dy = touch.y - touch.ud["parallax_start_y"]
-            offset = dy * self.factor
-            if offset > self.max_offset:
-                offset = self.max_offset
-            elif offset < -self.max_offset:
-                offset = -self.max_offset
-            self.y = touch.ud["parallax_base_y"] + offset
+        if not self.collide_point(*touch.pos):
+            return super().on_touch_move(touch)
+
+        dy = touch.y - self._start_y
+
+        if abs(dy) > self._threshold:
+            self._dragging = True
+            shift = max(-self._max_shift, min(self._max_shift, dy * 0.15))
+            self.y = shift
+            return True
+
         return super().on_touch_move(touch)
 
     def on_touch_up(self, touch):
-        if "parallax_base_y" in touch.ud:
-            base_y = touch.ud["parallax_base_y"]
+        if self._dragging:
             Animation.cancel_all(self, "y")
-            Animation(y=base_y, d=0.12, t="out_quad").start(self)
+            Animation(y=0, d=0.12, t="out_quad").start(self)
+            self._dragging = False
+            return True
+
         return super().on_touch_up(touch)
 
 
 # -------------------------------------------------------------------
 # MAIN APP
 # -------------------------------------------------------------------
-from kivy.utils import platform
-
 class NewsApp(App):
 
     def _apply_system_ui(self, *_):
@@ -383,7 +373,7 @@ class NewsApp(App):
         self.sent_titles = set()
         self.max_emails_value = 20
 
-        root = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        root = ParallaxRoot(orientation="vertical", padding=10, spacing=10)
 
         top_bar = BoxLayout(
             orientation="horizontal",
@@ -406,16 +396,13 @@ class NewsApp(App):
         top_bar.add_widget(Widget())
         root.add_widget(top_bar)
 
-        scroll = DisabledMainScroll(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=False, bar_width=0)
-        content = ParallaxContainer(
+        content = BoxLayout(
             orientation="vertical",
-            size_hint_y=None,
+            size_hint=(1, 1),
             padding=dp(10),
             spacing=dp(10),
         )
-        content.bind(minimum_height=content.setter("height"))
-        scroll.add_widget(content)
-        root.add_widget(scroll)
+        root.add_widget(content)
 
         self.senders_box = self.build_senders_box()
         content.add_widget(self.senders_box)
