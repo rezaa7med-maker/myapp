@@ -53,9 +53,11 @@ except Exception:
 # CONSTANTS
 # -------------------------------------------------------------------
 RSS_FEEDS = [
+    "https://feeds.bbci.co.uk/persian/rss.xml",
     "https://parsi.euronews.com/index.php/rss?level=program&name=world",
-    "https://www.mehrnews.com/index.php?module=persian&func=rss&service_id=1",
+    "https://www.mehrnews.com/rss",
     "https://www.tabnak.ir/fa/rss/allnews",
+    "https://www.parseek.com/rss/",
 ]
 
 REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0 (Android) KivyApp/1.0"}
