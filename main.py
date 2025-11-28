@@ -356,7 +356,7 @@ class NewsApp(App):
         root.add_widget(top_bar)
 
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True)
-        scroll.scroll_wheel_distance = dp(90)
+        scroll.scroll_wheel_distance = dp(300)
         content = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
