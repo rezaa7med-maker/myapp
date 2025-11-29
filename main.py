@@ -333,7 +333,6 @@ class NewsApp(App):
                 return    
             except Exception:    
                 pass    
-        # fallback for non-android
         self.stop()    
 
     def build(self):    
@@ -348,6 +347,9 @@ class NewsApp(App):
 
         # ---- for double-back exit (requirement 3)
         self._last_back_time = 0    
+
+        # ---- track active popup for cancel-on-back (new requirement)
+        self._active_popup = None
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)    
 
@@ -428,7 +430,6 @@ class NewsApp(App):
         btn_row.add_widget(self.send_btn)    
         content.add_widget(btn_row)    
 
-        # ---------- STATUS (Scrollable)  [requirement 2] ----------
         self.status_label = Label(    
             text="Ready...",    
             font_size="16sp",    
@@ -473,9 +474,15 @@ class NewsApp(App):
         self._apply_system_ui()    
         return True    
 
-    # ---------- back button handling (double press) [req 3 & 4] ----------
+    # ---------- back button handling ----------
+    # 1 press = cancel if popup open (new requirement)
+    # otherwise previous double-back behavior remains
     def on_keyboard(self, window, key, scancode, codepoint, modifier):    
         if key == 27:    
+            if self._active_popup and self._active_popup.parent:    
+                self._active_popup.dismiss()    
+                self._active_popup = None    
+                return True    
             now = time.time()    
             if now - self._last_back_time < 1.2:    
                 self.move_to_background()    
@@ -488,22 +495,21 @@ class NewsApp(App):
     def show_menu_popup(self):    
         wrapper = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))    
 
-        # ---------- menu buttons color change [requirement 1] ----------
         reset_btn = Button(    
             text="Reset RSS",    
             size_hint_y=None,    
             height=BTN_HEIGHT,    
             background_normal="",    
-            background_color=(1.0, 0.6, 0.0, 1.0),  # نارنجی
-            color=(0, 0, 0, 1),  # متن سیاه
+            background_color=(1.0, 0.6, 0.0, 1.0),    
+            color=(0, 0, 0, 1),    
         )    
         exit_btn = Button(    
             text="Exit",    
             size_hint_y=None,    
             height=BTN_HEIGHT,    
             background_normal="",    
-            background_color=(1.0, 0.6, 0.0, 1.0),  # نارنجی
-            color=(0, 0, 0, 1),  # متن سیاه
+            background_color=(1.0, 0.6, 0.0, 1.0),    
+            color=(0, 0, 0, 1),    
         )    
 
         wrapper.add_widget(reset_btn)    
@@ -516,11 +522,12 @@ class NewsApp(App):
             height=dp(200),    
             auto_dismiss=True,    
         )    
+
+        self._active_popup = popup
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
+
         reset_btn.bind(on_release=lambda *_: (popup.dismiss(), self.reset_rss()))    
-
-        # ---------- exit in background [requirement 4] ----------
         exit_btn.bind(on_release=lambda *_: (popup.dismiss(), self.move_to_background()))    
-
         popup.open()    
 
     def reset_rss(self):    
@@ -534,7 +541,6 @@ class NewsApp(App):
         self.sent_titles = set()    
         self.set_status("RSS reset.")    
 
-    # ---- exit confirm popup removed from back behavior [requirement 3]
     def show_exit_confirm(self):    
         self.show_confirm(    
             title="Exit?",    
@@ -583,6 +589,10 @@ class NewsApp(App):
             height=dp(200),    
             auto_dismiss=False,    
         )    
+
+        self._active_popup = popup
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
+
         yes_btn.bind(on_release=lambda *_: (popup.dismiss(), on_yes()))    
         no_btn.bind(on_release=lambda *_: popup.dismiss())    
         popup.open()    
@@ -793,6 +803,9 @@ class NewsApp(App):
             auto_dismiss=False,    
         )    
 
+        self._active_popup = popup
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
+
         def submit_and_close(*_):    
             email = email_input.text.strip()    
             password = pw_input.text.strip()    
@@ -855,6 +868,9 @@ class NewsApp(App):
             auto_dismiss=False,    
         )    
 
+        self._active_popup = popup
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
+
         def submit_and_close(*_):    
             email = email_input.text.strip()    
             if not email:    
@@ -914,6 +930,9 @@ class NewsApp(App):
             height=dp(240),    
             auto_dismiss=False,    
         )    
+
+        self._active_popup = popup
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
 
         def submit_and_close(*_):    
             raw = num_input.text.strip()    
@@ -991,7 +1010,6 @@ class NewsApp(App):
     # ---------------- UI HELPERS ----------------    
     def set_status(self, text):    
         self.status_label.text = text    
-        # optional: scroll to top on update
         if hasattr(self, "status_scroll"):    
             Clock.schedule_once(lambda *_: setattr(self.status_scroll, "scroll_y", 1), 0)    
 
