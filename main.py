@@ -7,12 +7,10 @@ import smtplib
 import base64
 import time
 import random
-
 from kivy.config import Config
 Config.set("graphics", "fullscreen", "0")
 Config.set("graphics", "borderless", "0")
 Config.set("graphics", "resizable", "1")
-
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
@@ -29,8 +27,6 @@ from kivy.metrics import dp
 from kivy.graphics import Color, Line, Rectangle
 from kivy.animation import Animation
 from kivy.utils import platform
-
-
 # -------------------------------------------------------------------
 # Fix for libraries that still call base64.decodestring/encodestring
 # -------------------------------------------------------------------
@@ -38,8 +34,6 @@ if not hasattr(base64, "decodestring"):
     base64.decodestring = base64.decodebytes
 if not hasattr(base64, "encodestring"):
     base64.encodestring = base64.encodebytes
-
-
 # -------------------------------------------------------------------
 # Optional certifi (better SSL on Android)
 # -------------------------------------------------------------------
@@ -50,8 +44,6 @@ try:
     os.environ["REQUESTS_CA_BUNDLE"] = CERT_PATH
 except Exception:
     CERT_PATH = None
-
-
 # -------------------------------------------------------------------
 # CONSTANTS
 # -------------------------------------------------------------------
@@ -62,32 +54,23 @@ RSS_FEEDS = [
     "https://www.tabnak.ir/fa/rss/allnews",
     "https://www.parseek.com/rss/",
 ]
-
 REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0 (Android) KivyApp/1.0"}
-
 RSS_PER_FEED_TIMEOUT = (5, 8)
 RSS_TOTAL_TIMEOUT = 20
-
 EMAIL_DELAY_RANGE = (2.5, 6.0)
 SENDER_DELAY_RANGE = (3.0, 8.0)
-
 LIGHT_BLUE = (0.3, 0.65, 1.0, 1.0)
 LIGHT_GREEN = (0.0, 0.8, 0.0, 1.0)
 LIGHT_PURPLE = (0.75, 0.45, 1.0, 1.0)
 CREAM_WHITE = (0.96, 0.96, 0.88, 1.0)
 NORMAL_GREEN = (0.0, 0.8, 0.0, 1.0)
 RED = (1.0, 0.4, 0.4, 1.0)
-
 BTN_HEIGHT = dp(46)
-
-
 # -------------------------------------------------------------------
 # SENT TITLES HELPERS
 # -------------------------------------------------------------------
 def normalize_title(t):
     return " ".join((t or "").split()).strip()
-
-
 def load_sent_titles(path):
     if not os.path.exists(path):
         return set()
@@ -101,8 +84,6 @@ def load_sent_titles(path):
     except Exception:
         pass
     return out
-
-
 def append_sent_titles(path, titles):
     if not titles:
         return
@@ -112,65 +93,50 @@ def append_sent_titles(path, titles):
                 f.write(normalize_title(t).replace("\n", " ") + "\n")
     except Exception:
         pass
-
-
 # -------------------------------------------------------------------
 # HELPERS
 # -------------------------------------------------------------------
 def collect_news_safe(log_func=print):
     import requests
     import feedparser
-
     items = []
     total_entries = 0
     lock = threading.Lock()
-
     def fetch_one(url):
         nonlocal total_entries
         try:
             kwargs = dict(headers=REQUEST_HEADERS, timeout=RSS_PER_FEED_TIMEOUT)
             if CERT_PATH:
                 kwargs["verify"] = CERT_PATH
-
             r = requests.get(url, **kwargs)
             r.raise_for_status()
-
             feed = feedparser.parse(r.text)
             entries = getattr(feed, "entries", []) or []
-
             local_items = []
             for e in entries:
                 title = normalize_title(getattr(e, "title", ""))
                 summary = getattr(e, "summary", "").strip() or title
                 if title:
                     local_items.append((title, summary))
-
             with lock:
                 total_entries += len(entries)
                 items.extend(local_items)
-
         except Exception as e:
             log_func(f"RSS error for {url}: {e}")
-
     threads = []
     for url in RSS_FEEDS:
         t = threading.Thread(target=fetch_one, args=(url,), daemon=True)
         threads.append(t)
         t.start()
-
     start = time.time()
     for t in threads:
         remaining = RSS_TOTAL_TIMEOUT - (time.time() - start)
         if remaining <= 0:
             break
         t.join(timeout=remaining)
-
     return items, total_entries
-
-
 def send_emails_safe(sender_email, app_password, to_emails, news_items, progress_cb=None):
     last_err = None
-
     for verified in (True, False):
         try:
             if verified:
@@ -180,12 +146,10 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
                     context = ssl.create_default_context()
             else:
                 context = ssl._create_unverified_context()
-
             with smtplib.SMTP_SSL(
                 "smtp.gmail.com", 465, context=context, timeout=20
             ) as server:
                 server.login(sender_email, app_password)
-
                 total_n = len(news_items)
                 for i, (title, summary) in enumerate(news_items):
                     if progress_cb:
@@ -193,7 +157,6 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
                             progress_cb(i + 1, total_n)
                         except Exception:
                             pass
-
                     msg = "\n".join(
                         [
                             f"To: {', '.join(to_emails)}",
@@ -205,25 +168,19 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
                     server.sendmail(
                         sender_email, to_emails, msg.encode("utf-8")
                     )
-
                     if i < total_n - 1:
                         time.sleep(random.uniform(*EMAIL_DELAY_RANGE))
-
             return True, (
                 "Sent with verified SSL"
                 if verified
                 else "Sent without SSL verification"
             )
-
         except Exception as e:
             last_err = e
             if verified and "CERTIFICATE_VERIFY_FAILED" in str(e):
                 continue
             break
-
     return False, str(last_err)
-
-
 # -------------------------------------------------------------------
 # UI ROW FOR SENDERS / RECIPIENTS
 # -------------------------------------------------------------------
@@ -236,7 +193,6 @@ class SenderRow(BoxLayout):
             spacing=dp(6),
             **kwargs,
         )
-
         self.lbl = Label(
             text=text,
             halign="left",
@@ -249,14 +205,10 @@ class SenderRow(BoxLayout):
                 inst, "text_size", (inst.width, None)
             )
         )
-
         btn_del = Button(text="×", size_hint_x=0.11, font_size="16sp")
         btn_del.bind(on_release=lambda *_: on_delete())
-
         self.add_widget(self.lbl)
         self.add_widget(btn_del)
-
-
 class RecipientRow(BoxLayout):
     def __init__(self, text, on_delete, **kwargs):
         super().__init__(
@@ -266,7 +218,6 @@ class RecipientRow(BoxLayout):
             spacing=dp(6),
             **kwargs,
         )
-
         self.lbl = Label(
             text=text,
             halign="left",
@@ -279,14 +230,10 @@ class RecipientRow(BoxLayout):
                 inst, "text_size", (inst.width, None)
             )
         )
-
         btn_del = Button(text="×", size_hint_x=0.11, font_size="16sp")
         btn_del.bind(on_release=lambda *_: on_delete())
-
         self.add_widget(self.lbl)
         self.add_widget(btn_del)
-
-
 # -------------------------------------------------------------------
 # PARALLAX HOLDER (moves only content, not whole app)
 # -------------------------------------------------------------------
@@ -299,94 +246,90 @@ class ParallaxHolder(FloatLayout):
         self._threshold = dp(8)
         self._content = None
         self._base_y = 0
-
     def set_content(self, w):
         self._content = w
         # بعد از اینکه لایه روی صفحه نشست، y پایه رو ذخیره کن
         Clock.schedule_once(lambda *_: self._capture_base(), 0)
-
     def _capture_base(self):
         if self._content:
             self._base_y = self._content.y
-
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
             self._start_y = touch.y
             self._dragging = False
         return super().on_touch_down(touch)
-
     def on_touch_move(self, touch):
         if not self.collide_point(*touch.pos) or not self._content:
             return super().on_touch_move(touch)
-
         dy = touch.y - self._start_y
-
         if abs(dy) > self._threshold:
             self._dragging = True
             shift = max(-self._max_shift, min(self._max_shift, dy * 0.15))
             self._content.y = self._base_y + shift
             return True
-
         return super().on_touch_move(touch)
-
     def on_touch_up(self, touch):
         if self._dragging and self._content:
             Animation.cancel_all(self._content, "y")
             Animation(y=self._base_y, d=0.12, t="out_quad").start(self._content)
             self._dragging = False
             return True
-
         return super().on_touch_up(touch)
-
-
 # -------------------------------------------------------------------
 # MAIN APP
 # -------------------------------------------------------------------
 class NewsApp(App):
-
     def _apply_system_ui(self, *_):
         if platform != "android":
             return
-
         try:
             from android.runnable import run_on_ui_thread
             from jnius import autoclass
-
             @run_on_ui_thread
             def _do():
                 PythonActivity = autoclass("org.kivy.android.PythonActivity")
                 LayoutParams = autoclass("android.view.WindowManager$LayoutParams")
                 View = autoclass("android.view.View")
-
                 activity = PythonActivity.mActivity
                 window = activity.getWindow()
                 decor = window.getDecorView()
-
                 window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
                 window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
                 decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
-
             _do()
-
         except Exception:
             pass
+
+    def _move_to_background(self):
+        if platform == "android":
+            try:
+                from android.runnable import run_on_ui_thread
+                from jnius import autoclass
+                @run_on_ui_thread
+                def _do():
+                    PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                    activity = PythonActivity.mActivity
+                    activity.moveTaskToBack(True)
+                _do()
+                return
+            except Exception:
+                pass
+        self.stop()
 
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
         Window.fullscreen = False
-
         self.config_path = os.path.join(self.user_data_dir, "config.json")
         self.sent_titles_path = os.path.join(self.user_data_dir, "sent_titles.txt")
-
         self.senders = []
         self.recipients = []
         self.sent_titles = set()
         self.max_emails_value = 20
+        self._last_back_time = 0
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
-
         # ---------- TOP BAR ----------
         top_bar = BoxLayout(
             orientation="horizontal",
@@ -408,11 +351,9 @@ class NewsApp(App):
         top_bar.add_widget(menu_btn)
         top_bar.add_widget(Widget())
         root.add_widget(top_bar)
-
         # ---------- PARALLAX LAYER ----------
         parallax = ParallaxHolder(size_hint=(1, 1))
         root.add_widget(parallax)
-
         content = BoxLayout(
             orientation="vertical",
             size_hint=(1, None),
@@ -423,13 +364,10 @@ class NewsApp(App):
         content.pos_hint = {"x": 0, "top": 1}
         parallax.add_widget(content)
         parallax.set_content(content)
-
         self.senders_box = self.build_senders_box()
         content.add_widget(self.senders_box)
-
         self.recipients_box = self.build_recipients_box()
         content.add_widget(self.recipients_box)
-
         self.max_emails_btn = Button(
             text=f"Max emails: {self.max_emails_value}",
             size_hint=(1, None),
@@ -441,7 +379,6 @@ class NewsApp(App):
         )
         self.max_emails_btn.bind(on_release=lambda *_: self.show_max_emails_popup())
         content.add_widget(self.max_emails_btn)
-
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
@@ -473,10 +410,18 @@ class NewsApp(App):
             valign="top",
         )
         self.status_label.bind(size=self.status_label.setter("text_size"))
-        content.add_widget(self.status_label)
+        self.status_label.size_hint_y = None
+        self.status_label.bind(texture_size=lambda inst, val: setattr(inst, "height", val[1]))
+
+        self.status_scroll = ScrollView(
+            size_hint=(1, None),
+            height=dp(220),
+            do_scroll_x=False,
+        )
+        self.status_scroll.add_widget(self.status_label)
+        content.add_widget(self.status_scroll)
 
         content.add_widget(Widget(size_hint=(1, None), height=dp(90)))
-
         self.load_config()
         self.sent_titles = load_sent_titles(self.sent_titles_path)
         self.refresh_senders_list()
@@ -488,7 +433,6 @@ class NewsApp(App):
         Clock.schedule_once(self._apply_system_ui, 0)
         Clock.schedule_once(self._apply_system_ui, 0.5)
         Clock.schedule_once(self._apply_system_ui, 1.0)
-
         Window.bind(on_keyboard=self.on_keyboard)
         Window.bind(on_focus=self._apply_system_ui)
         Window.bind(on_resize=self._apply_system_ui)
@@ -500,7 +444,12 @@ class NewsApp(App):
 
     def on_keyboard(self, window, key, scancode, codepoint, modifier):
         if key == 27:
-            self.show_exit_confirm()
+            now = time.time()
+            if now - self._last_back_time <= 1.5:
+                self._move_to_background()
+                self._last_back_time = 0
+            else:
+                self._last_back_time = now
             return True
         return False
 
@@ -510,7 +459,6 @@ class NewsApp(App):
         exit_btn = Button(text="Exit", size_hint_y=None, height=BTN_HEIGHT)
         wrapper.add_widget(reset_btn)
         wrapper.add_widget(exit_btn)
-
         popup = Popup(
             title="Menu",
             content=wrapper,
@@ -519,7 +467,7 @@ class NewsApp(App):
             auto_dismiss=True,
         )
         reset_btn.bind(on_release=lambda *_: (popup.dismiss(), self.reset_rss()))
-        exit_btn.bind(on_release=lambda *_: (popup.dismiss(), self.stop()))
+        exit_btn.bind(on_release=lambda *_: (popup.dismiss(), self._move_to_background()))
         popup.open()
 
     def reset_rss(self):
@@ -533,15 +481,6 @@ class NewsApp(App):
         self.sent_titles = set()
         self.set_status("RSS reset.")
 
-    def show_exit_confirm(self):
-        self.show_confirm(
-            title="Exit?",
-            message="Exit?",
-            yes_text="Yes, I'm sure",
-            no_text="Cancel",
-            on_yes=self.stop,
-        )
-
     def show_send_confirm(self):
         self.show_confirm(
             title="Send?",
@@ -550,7 +489,6 @@ class NewsApp(App):
             no_text="Cancel",
             on_yes=self.do_send,
         )
-
     def show_delete_confirm(self, on_yes):
         self.show_confirm(
             title="Delete?",
@@ -559,11 +497,9 @@ class NewsApp(App):
             no_text="Cancel",
             on_yes=on_yes,
         )
-
     def show_confirm(self, title, message, yes_text, no_text, on_yes):
         content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
         content.add_widget(Label(text=message))
-
         btns = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -575,7 +511,6 @@ class NewsApp(App):
         btns.add_widget(yes_btn)
         btns.add_widget(no_btn)
         content.add_widget(btns)
-
         popup = Popup(
             title=title,
             content=content,
@@ -595,7 +530,6 @@ class NewsApp(App):
             spacing=dp(6),
             padding=dp(6),
         )
-
         header = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -622,15 +556,12 @@ class NewsApp(App):
         add_btn.bind(on_release=lambda *_: self.show_sender_form_popup())
         header.add_widget(add_btn)
         box.add_widget(header)
-
         self.senders_list_layout = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
         self.senders_list_layout.bind(
             minimum_height=self.senders_list_layout.setter("height")
         )
-
         list_scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         list_scroll.add_widget(self.senders_list_layout)
-
         list_container = BoxLayout(size_hint=(1, 1), padding=dp(4))
         with list_container.canvas.before:
             Color(0.12, 0.12, 0.12, 1)
@@ -638,16 +569,13 @@ class NewsApp(App):
         with list_container.canvas.after:
             Color(0.5, 0.5, 0.5, 1)
             border = Line(rectangle=(*list_container.pos, *list_container.size), width=1.2)
-
         def upd(*_):
             bg.pos = list_container.pos
             bg.size = list_container.size
             border.rectangle = (*list_container.pos, *list_container.size)
-
         list_container.bind(pos=upd, size=upd)
         list_container.add_widget(list_scroll)
         box.add_widget(list_container)
-
         return box
 
     def build_recipients_box(self):
@@ -658,7 +586,6 @@ class NewsApp(App):
             spacing=dp(6),
             padding=dp(6),
         )
-
         header = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -685,15 +612,12 @@ class NewsApp(App):
         add_btn.bind(on_release=lambda *_: self.show_recipient_form_popup())
         header.add_widget(add_btn)
         box.add_widget(header)
-
         self.recipients_list_layout = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
         self.recipients_list_layout.bind(
             minimum_height=self.recipients_list_layout.setter("height")
         )
-
         list_scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         list_scroll.add_widget(self.recipients_list_layout)
-
         list_container = BoxLayout(size_hint=(1, 1), padding=dp(4))
         with list_container.canvas.before:
             Color(0.12, 0.12, 0.12, 1)
@@ -701,16 +625,13 @@ class NewsApp(App):
         with list_container.canvas.after:
             Color(0.5, 0.5, 0.5, 1)
             border = Line(rectangle=(*list_container.pos, *list_container.size), width=1.2)
-
         def upd(*_):
             bg.pos = list_container.pos
             bg.size = list_container.size
             border.rectangle = (*list_container.pos, *list_container.size)
-
         list_container.bind(pos=upd, size=upd)
         list_container.add_widget(list_scroll)
         box.add_widget(list_container)
-
         return box
 
     def refresh_senders_list(self):
@@ -740,13 +661,11 @@ class NewsApp(App):
         is_edit = edit_index is not None
         initial_email = self.senders[edit_index]["email"] if is_edit else ""
         initial_pw = self.senders[edit_index]["password"] if is_edit else ""
-
         wrapper = BoxLayout(
             orientation="vertical",
             spacing=dp(10),
             padding=dp(12),
         )
-
         wrapper.add_widget(
             Label(
                 text="Email Address",
@@ -765,7 +684,6 @@ class NewsApp(App):
             padding=[dp(8), dp(10), dp(8), dp(10)],
         )
         wrapper.add_widget(email_input)
-
         wrapper.add_widget(
             Label(
                 text="App Password",
@@ -785,7 +703,6 @@ class NewsApp(App):
             padding=[dp(8), dp(10), dp(8), dp(10)],
         )
         wrapper.add_widget(pw_input)
-
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -797,7 +714,6 @@ class NewsApp(App):
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
-
         popup = Popup(
             title="Edit Sender" if is_edit else "Add Sender",
             content=wrapper,
@@ -805,7 +721,6 @@ class NewsApp(App):
             height=dp(320),
             auto_dismiss=False,
         )
-
         def submit_and_close(*_):
             email = email_input.text.strip()
             password = pw_input.text.strip()
@@ -818,7 +733,6 @@ class NewsApp(App):
             self.save_config()
             self.refresh_senders_list()
             popup.dismiss()
-
         save_btn.bind(on_release=submit_and_close)
         cancel_btn.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
@@ -826,13 +740,11 @@ class NewsApp(App):
     def show_recipient_form_popup(self, edit_index=None):
         is_edit = edit_index is not None
         initial_email = self.recipients[edit_index] if is_edit else ""
-
         wrapper = BoxLayout(
             orientation="vertical",
             spacing=dp(10),
             padding=dp(12),
         )
-
         wrapper.add_widget(
             Label(
                 text="Email Address",
@@ -851,7 +763,6 @@ class NewsApp(App):
             padding=[dp(8), dp(10), dp(8), dp(10)],
         )
         wrapper.add_widget(email_input)
-
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -863,7 +774,6 @@ class NewsApp(App):
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
-
         popup = Popup(
             title="Edit Recipient" if is_edit else "Add Recipient",
             content=wrapper,
@@ -871,7 +781,6 @@ class NewsApp(App):
             height=dp(240),
             auto_dismiss=False,
         )
-
         def submit_and_close(*_):
             email = email_input.text.strip()
             if not email:
@@ -883,7 +792,6 @@ class NewsApp(App):
             self.save_config()
             self.refresh_recipients_list()
             popup.dismiss()
-
         save_btn.bind(on_release=submit_and_close)
         cancel_btn.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
@@ -894,7 +802,6 @@ class NewsApp(App):
             spacing=dp(10),
             padding=dp(12),
         )
-
         wrapper.add_widget(
             Label(
                 text="Max emails",
@@ -914,7 +821,6 @@ class NewsApp(App):
             padding=[dp(8), dp(10), dp(8), dp(10)],
         )
         wrapper.add_widget(num_input)
-
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -926,7 +832,6 @@ class NewsApp(App):
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
-
         popup = Popup(
             title="Set Max Emails",
             content=wrapper,
@@ -934,7 +839,6 @@ class NewsApp(App):
             height=dp(240),
             auto_dismiss=False,
         )
-
         def submit_and_close(*_):
             raw = num_input.text.strip()
             try:
@@ -946,7 +850,6 @@ class NewsApp(App):
                 self.max_emails_btn.text = f"Max emails: {self.max_emails_value}"
             self.save_config()
             popup.dismiss()
-
         save_btn.bind(on_release=submit_and_close)
         cancel_btn.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
@@ -976,7 +879,6 @@ class NewsApp(App):
             if os.path.exists(self.config_path):
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-
                 self.senders = data.get("senders", []) or []
                 self.recipients = data.get("recipients", []) or []
                 mr = data.get("max_emails", "")
@@ -1024,23 +926,19 @@ class NewsApp(App):
     def on_test_rss(self, *_):
         self.set_buttons_enabled(False)
         self.set_status("Testing RSS ...")
-
         def task():
             start = time.time()
             try:
                 items, total = collect_news_safe()
                 elapsed = time.time() - start
-
                 unique_titles = []
                 seen = set()
                 for t, s in items:
                     if t not in seen:
                         unique_titles.append((t, s))
                         seen.add(t)
-
                 sent_count = len(self.sent_titles)
                 remaining_new = len([t for t, _ in unique_titles if t not in self.sent_titles])
-
                 Clock.schedule_once(
                     lambda dt: (
                         self.set_status(
@@ -1063,7 +961,6 @@ class NewsApp(App):
                     ),
                     0,
                 )
-
         self.run_in_thread(task)
 
     def on_send(self, *_):
@@ -1076,27 +973,21 @@ class NewsApp(App):
         if not self.recipients:
             self.set_status("Please add at least one recipient.")
             return
-
         max_emails = self.max_emails_value or 20
-
         to_emails = [x.strip() for x in self.recipients if str(x).strip()]
         self.set_buttons_enabled(False)
         self.set_status("Sending...")
-
         def task():
             try:
                 items, total = collect_news_safe()
-
                 unique_items = []
                 seen = set()
                 for t, s in items:
                     if t not in seen:
                         unique_items.append((t, s))
                         seen.add(t)
-
                 new_items = [(t, s) for (t, s) in unique_items if t not in self.sent_titles]
                 batch_items = new_items[:max_emails]
-
                 if not batch_items:
                     Clock.schedule_once(
                         lambda dt: (
@@ -1106,20 +997,16 @@ class NewsApp(App):
                         0,
                     )
                     return
-
                 results = []
                 success_count = 0
                 sent_per_sender = {}
-
                 for idx, s in enumerate(self.senders):
                     sender_email = s.get("email", "").strip()
                     app_pass = s.get("password", "").strip()
-
                     if not sender_email or not app_pass:
                         results.append(f"{sender_email or 'Unknown'}: skipped (missing data)")
                         sent_per_sender[sender_email or "Unknown"] = 0
                         continue
-
                     def progress_cb(cur, tot, se=sender_email):
                         Clock.schedule_once(
                             lambda dt, _se=se, _c=cur, _t=tot: self.set_status(
@@ -1127,11 +1014,9 @@ class NewsApp(App):
                             ),
                             0,
                         )
-
                     ok, msg = send_emails_safe(
                         sender_email, app_pass, to_emails, batch_items, progress_cb=progress_cb
                     )
-
                     if ok:
                         success_count += 1
                         results.append(f"{sender_email}: OK ({len(batch_items)} items)")
@@ -1139,26 +1024,19 @@ class NewsApp(App):
                     else:
                         results.append(f"{sender_email}: FAIL ({msg})")
                         sent_per_sender[sender_email] = 0
-
                     if idx < len(self.senders) - 1:
                         time.sleep(random.uniform(*SENDER_DELAY_RANGE))
-
                 if success_count > 0:
                     sent_now_titles = [t for t, _ in batch_items]
                     append_sent_titles(self.sent_titles_path, sent_now_titles)
                     self.sent_titles.update(sent_now_titles)
-
                 remaining_after = len([t for t, _ in new_items if t not in set(t for t, _ in batch_items)])
-
                 out = (
                     "Finished.\n"
-                    f"Batch sent: {len(batch_items)}\n"
-                    f"Successful senders: {success_count}/{len(self.senders)}\n"
                     f"Sent feeds total: {len(self.sent_titles)}\n"
                     f"Remaining feeds total: {remaining_after}\n\n"
                     + "\n".join(results)
                 )
-
                 Clock.schedule_once(
                     lambda dt: (
                         self.set_status(out),
@@ -1166,7 +1044,6 @@ class NewsApp(App):
                     ),
                     0,
                 )
-
             except Exception as e:
                 tb = traceback.format_exc()
                 Clock.schedule_once(
@@ -1176,9 +1053,7 @@ class NewsApp(App):
                     ),
                     0,
                 )
-
         self.run_in_thread(task)
-
 
 if __name__ == "__main__":
     NewsApp().run()
