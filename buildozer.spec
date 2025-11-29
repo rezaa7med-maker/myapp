@@ -1,5 +1,5 @@
 [app]
-title = Email campaign
+title = Campaign
 package.name = myapp
 package.domain = org.test
 
