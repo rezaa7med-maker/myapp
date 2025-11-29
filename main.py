@@ -22,6 +22,7 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from kivy.uix.popup import Popup
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.metrics import dp
@@ -287,15 +288,26 @@ class RecipientRow(BoxLayout):
 
 
 # -------------------------------------------------------------------
-# PARALLAX ROOT (NO SCROLL, SMALL DRAG MOVE)
+# PARALLAX HOLDER (moves only content, not whole app)
 # -------------------------------------------------------------------
-class ParallaxRoot(BoxLayout):
+class ParallaxHolder(FloatLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._start_y = 0
         self._dragging = False
-        self._max_shift = dp(18)
+        self._max_shift = dp(18)     # شدت حرکت (اگه خواستی عوضش کن)
         self._threshold = dp(8)
+        self._content = None
+        self._base_y = 0
+
+    def set_content(self, w):
+        self._content = w
+        # بعد از اینکه لایه روی صفحه نشست، y پایه رو ذخیره کن
+        Clock.schedule_once(lambda *_: self._capture_base(), 0)
+
+    def _capture_base(self):
+        if self._content:
+            self._base_y = self._content.y
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
@@ -304,7 +316,7 @@ class ParallaxRoot(BoxLayout):
         return super().on_touch_down(touch)
 
     def on_touch_move(self, touch):
-        if not self.collide_point(*touch.pos):
+        if not self.collide_point(*touch.pos) or not self._content:
             return super().on_touch_move(touch)
 
         dy = touch.y - self._start_y
@@ -312,15 +324,15 @@ class ParallaxRoot(BoxLayout):
         if abs(dy) > self._threshold:
             self._dragging = True
             shift = max(-self._max_shift, min(self._max_shift, dy * 0.15))
-            self.y = shift
+            self._content.y = self._base_y + shift
             return True
 
         return super().on_touch_move(touch)
 
     def on_touch_up(self, touch):
-        if self._dragging:
-            Animation.cancel_all(self, "y")
-            Animation(y=0, d=0.12, t="out_quad").start(self)
+        if self._dragging and self._content:
+            Animation.cancel_all(self._content, "y")
+            Animation(y=self._base_y, d=0.12, t="out_quad").start(self._content)
             self._dragging = False
             return True
 
@@ -373,8 +385,9 @@ class NewsApp(App):
         self.sent_titles = set()
         self.max_emails_value = 20
 
-        root = ParallaxRoot(orientation="vertical", padding=10, spacing=10)
+        root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
+        # ---------- TOP BAR ----------
         top_bar = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
@@ -396,13 +409,20 @@ class NewsApp(App):
         top_bar.add_widget(Widget())
         root.add_widget(top_bar)
 
+        # ---------- PARALLAX LAYER ----------
+        parallax = ParallaxHolder(size_hint=(1, 1))
+        root.add_widget(parallax)
+
         content = BoxLayout(
             orientation="vertical",
-            size_hint=(1, 1),
+            size_hint=(1, None),
             padding=dp(10),
             spacing=dp(10),
         )
-        root.add_widget(content)
+        content.bind(minimum_height=content.setter("height"))
+        content.pos_hint = {"x": 0, "top": 1}
+        parallax.add_widget(content)
+        parallax.set_content(content)
 
         self.senders_box = self.build_senders_box()
         content.add_widget(self.senders_box)
