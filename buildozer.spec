@@ -1,10 +1,10 @@
 [app]
-title = My Application
+title = Email campaign
 package.name = myapp
 package.domain = org.test
 
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,ttf
+source.include_exts = py,png,jpg,kv,atlas
 
 version = 0.1
 requirements = python3,kivy==2.3.0,requests,feedparser==6.0.11,certifi,pyjnius,arabic-reshaper,python-bidi
