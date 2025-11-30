@@ -60,6 +60,11 @@ RSS_PER_FEED_TIMEOUT = (5, 8)
 RSS_TOTAL_TIMEOUT = 20
 EMAIL_DELAY_RANGE = (2.5, 6.0)
 SENDER_DELAY_RANGE = (3.0, 8.0)
+
+# --- NEW: retry on temporary network drop ---
+NET_RETRY_COUNT = 2
+NET_RETRY_DELAY_RANGE = (2.0, 4.0)
+
 LIGHT_BLUE = (0.3, 0.65, 1.0, 1.0)
 LIGHT_GREEN = (0.0, 0.8, 0.0, 1.0)
 LIGHT_PURPLE = (0.75, 0.45, 1.0, 1.0)
@@ -342,7 +347,6 @@ class NewsApp(App):
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             activity = PythonActivity.mActivity
 
-            # WakeLock (CPU)
             PowerManager = autoclass("android.os.PowerManager")
             pm = cast("android.os.PowerManager",
                       activity.getSystemService(activity.POWER_SERVICE))
@@ -351,7 +355,6 @@ class NewsApp(App):
             if self._wake_lock and not self._wake_lock.isHeld():
                 self._wake_lock.acquire()
 
-            # WifiLock (Wi-Fi)
             WifiManager = autoclass("android.net.wifi.WifiManager")
             wm = cast("android.net.wifi.WifiManager",
                       activity.getSystemService(activity.WIFI_SERVICE))
@@ -388,15 +391,11 @@ class NewsApp(App):
         self.sent_titles = set()
         self.max_emails_value = 20
 
-        # ---- for double-back exit (requirement 3)
         self._last_back_time = 0
-
-        # ---- track active popup for cancel-on-back (new requirement)
         self._active_popup = None
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
-        # ---------- TOP BAR ----------
         top_bar = BoxLayout(
             orientation="horizontal",
             size_hint=(1, None),
@@ -418,11 +417,9 @@ class NewsApp(App):
         top_bar.add_widget(Widget())
         root.add_widget(top_bar)
 
-        # ---------- PARALLAX LAYER ----------
         parallax = ParallaxHolder(size_hint=(1, 1))
         root.add_widget(parallax)
 
-        # ---- small bottom toast for double-back exit message (requirement 2) ----
         self._toast_ev = None
         self.exit_toast = Label(
             text="",
@@ -497,8 +494,7 @@ class NewsApp(App):
             valign="top",
         )
         self.status_label.bind(
-            width=lambda inst, *_: setattr(inst, "text_size", (inst.width, None)
-            )
+            width=lambda inst, *_: setattr(inst, "text_size", (inst.width, None))
         )
         self.status_label.bind(
             texture_size=lambda inst, *_: setattr(inst, "height", inst.texture_size[1])
@@ -520,7 +516,6 @@ class NewsApp(App):
         self.refresh_recipients_list()
         return root
 
-    # ---- show bottom tiny toast for exit hint (requirement 2) ----
     def show_exit_toast(self):
         if not hasattr(self, "exit_toast"):
             return
@@ -544,20 +539,14 @@ class NewsApp(App):
         Window.bind(on_focus=self._apply_system_ui)
         Window.bind(on_resize=self._apply_system_ui)
 
-        # --- NEW: keep internet on when app goes background
         self._acquire_net_locks()
 
     def on_resume(self):
         Window.fullscreen = False
         self._apply_system_ui()
-
-        # --- NEW: re-acquire after resume (if OS released)
         self._acquire_net_locks()
         return True
 
-    # ---------- back button handling ----------
-    # 1 press = cancel if popup open (new requirement)
-    # otherwise previous double-back behavior remains
     def on_keyboard(self, window, key, scancode, codepoint, modifier):
         if key == 27:
             if self._active_popup and self._active_popup.parent:
@@ -1048,7 +1037,6 @@ class NewsApp(App):
             pass
 
     def on_pause(self):
-        # --- NEW: ensure locks are held in background
         self._acquire_net_locks()
         return True
 
@@ -1089,8 +1077,6 @@ class NewsApp(App):
 
     def on_stop(self):
         self.save_config()
-
-        # --- NEW: release locks on real exit
         self._release_net_locks()
 
     # ---------------- UI HELPERS ----------------
@@ -1184,9 +1170,11 @@ class NewsApp(App):
                         0,
                     )
                     return
+
                 results = []
                 success_count = 0
                 sent_per_sender = {}
+
                 for idx, s in enumerate(self.senders):
                     sender_email = s.get("email", "").strip()
                     app_pass = s.get("password", "").strip()
@@ -1203,9 +1191,22 @@ class NewsApp(App):
                             0,
                         )
 
-                    ok, msg = send_emails_safe(
-                        sender_email, app_pass, to_emails, batch_items, progress_cb=progress_cb
-                    )
+                    # --- NEW: retry on Errno 101 / network unreachable ---
+                    ok, msg = False, ""
+                    last_msg = ""
+                    for attempt in range(NET_RETRY_COUNT + 1):
+                        ok, msg = send_emails_safe(
+                            sender_email, app_pass, to_emails, batch_items,
+                            progress_cb=progress_cb
+                        )
+                        if ok:
+                            break
+                        last_msg = msg or ""
+                        if ("Errno 101" in last_msg) or ("Network is unreachable" in last_msg):
+                            time.sleep(random.uniform(*NET_RETRY_DELAY_RANGE))
+                            continue
+                        break
+
                     if ok:
                         success_count += 1
                         results.append(f"{sender_email}: OK ({len(batch_items)} items)")
@@ -1213,6 +1214,7 @@ class NewsApp(App):
                     else:
                         results.append(f"{sender_email}: FAIL ({msg})")
                         sent_per_sender[sender_email] = 0
+
                     if idx < len(self.senders) - 1:
                         time.sleep(random.uniform(*SENDER_DELAY_RANGE))
 
