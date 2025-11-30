@@ -916,96 +916,97 @@ class NewsApp(App):
             self.recipients_list_layout.add_widget(row)
 
     def show_sender_form_popup(self, edit_index=None):
-        is_edit = edit_index is not None
-        initial_email = self.senders[edit_index]["email"] if is_edit else ""
-        initial_pw = self.senders[edit_index]["password"] if is_edit else ""
+    is_edit = edit_index is not None
+    initial_email = self.senders[edit_index]["email"] if is_edit else ""
+    initial_pw = self.senders[edit_index]["password"] if is_edit else ""
 
-        # ✅ فقط همینجا اصلاح شد: padding بالا بیشتر شد
-        wrapper = BoxLayout(
-            orientation="vertical",
-            spacing=dp(10),
-            padding=[dp(12), dp(22), dp(12), dp(12)],  # left, top, right, bottom
-        )
+    wrapper = BoxLayout(
+        orientation="vertical",
+        spacing=dp(10),
+        padding=dp(12),
+    )
 
-        wrapper.add_widget(
-            Label(
-                text="Email Address",
-                size_hint_y=None,
-                height=dp(28),
-                halign="left",
-                valign="middle",
-            )
-        )
-        email_input = TextInput(
-            text=initial_email,
-            multiline=False,
+    # ✅ این اسپيسر باعث میشه محتوا از خط آبی فاصله بگیره
+    wrapper.add_widget(Widget(size_hint_y=None, height=dp(12)))
+
+    wrapper.add_widget(
+        Label(
+            text="Email Address",
             size_hint_y=None,
-            height=dp(54),
-            font_size="16sp",
-            padding=[dp(8), dp(10), dp(8), dp(10)],
+            height=dp(28),
+            halign="left",
+            valign="middle",
         )
-        wrapper.add_widget(email_input)
+    )
+    email_input = TextInput(
+        text=initial_email,
+        multiline=False,
+        size_hint_y=None,
+        height=dp(54),
+        font_size="16sp",
+        padding=[dp(8), dp(10), dp(8), dp(10)],
+    )
+    wrapper.add_widget(email_input)
 
-        wrapper.add_widget(
-            Label(
-                text="App Password",
-                size_hint_y=None,
-                height=dp(28),
-                halign="left",
-                valign="middle",
-            )
-        )
-        pw_input = TextInput(
-            text=initial_pw,
-            multiline=False,
-            password=True,
+    wrapper.add_widget(
+        Label(
+            text="App Password",
             size_hint_y=None,
-            height=dp(54),
-            font_size="16sp",
-            padding=[dp(8), dp(10), dp(8), dp(10)],
+            height=dp(28),
+            halign="left",
+            valign="middle",
         )
-        wrapper.add_widget(pw_input)
+    )
+    pw_input = TextInput(
+        text=initial_pw,
+        multiline=False,
+        password=True,
+        size_hint_y=None,
+        height=dp(54),
+        font_size="16sp",
+        padding=[dp(8), dp(10), dp(8), dp(10)],
+    )
+    wrapper.add_widget(pw_input)
 
-        btn_row = BoxLayout(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(48),
-            spacing=dp(8),
-        )
-        save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
-        cancel_btn = Button(text="Cancel", background_normal="", background_color=RED)
-        btn_row.add_widget(save_btn)
-        btn_row.add_widget(cancel_btn)
-        wrapper.add_widget(btn_row)
+    btn_row = BoxLayout(
+        orientation="horizontal",
+        size_hint_y=None,
+        height=dp(48),
+        spacing=dp(8),
+    )
+    save_btn = Button(text="Save", background_normal="", background_color=NORMAL_GREEN)
+    cancel_btn = Button(text="Cancel", background_normal="", background_color=RED)
+    btn_row.add_widget(save_btn)
+    btn_row.add_widget(cancel_btn)
+    wrapper.add_widget(btn_row)
 
-        popup = Popup(
-            title="Edit Sender" if is_edit else "Add Sender",
-            content=wrapper,
-            size_hint=(0.92, None),
-            height=dp(320),
-            auto_dismiss=False,
-        )
-        self._active_popup = popup
-        popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
+    popup = Popup(
+        title="Edit Sender" if is_edit else "Add Sender",
+        content=wrapper,
+        size_hint=(0.92, None),
+        height=dp(320),
+        auto_dismiss=False,
+    )
+    self._active_popup = popup
+    popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
 
-        def submit_and_close(*_):
-            email = email_input.text.strip()
-            password = pw_input.text.strip()
-            if not email or not password:
-                return
-            if is_edit:
-                self.senders[edit_index] = {"email": email, "password": password}
-            else:
-                self.senders.append({"email": email, "password": password}
-)
-            self.save_config()
-            self.refresh_senders_list()
-            popup.dismiss()
+    def submit_and_close(*_):
+        email = email_input.text.strip()
+        password = pw_input.text.strip()
+        if not email or not password:
+            return
+        if is_edit:
+            self.senders[edit_index] = {"email": email, "password": password}
+        else:
+            self.senders.append({"email": email, "password": password})
+        self.save_config()
+        self.refresh_senders_list()
+        popup.dismiss()
 
-        save_btn.bind(on_release=submit_and_close)
-        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
-        popup.open()
-
+    save_btn.bind(on_release=submit_and_close)
+    cancel_btn.bind(on_release=lambda *_: popup.dismiss())
+    popup.open()
+    
     def show_recipient_form_popup(self, edit_index=None):
         is_edit = edit_index is not None
         initial_email = self.recipients[edit_index] if is_edit else ""
