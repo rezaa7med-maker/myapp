@@ -12,7 +12,9 @@ requirements = python3,kivy==2.3.0,requests,feedparser==6.0.11,certifi,pyjnius
 orientation = portrait
 fullscreen = 0
 
-android.permissions = INTERNET, ACCESS_NETWORK_STATE
+# --- FIXED: add needed locks + wifi permissions
+android.permissions = INTERNET, ACCESS_NETWORK_STATE, WAKE_LOCK, ACCESS_WIFI_STATE, CHANGE_WIFI_STATE
+
 android.api = 33
 android.minapi = 21
 android.archs = arm64-v8a, armeabi-v7a
