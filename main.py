@@ -333,6 +333,51 @@ class NewsApp(App):
                 pass
         self.stop()
 
+    # ---- keep internet alive in background (Android) ----
+    def _acquire_net_locks(self):
+        if platform != "android":
+            return
+        try:
+            from jnius import autoclass, cast
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            activity = PythonActivity.mActivity
+
+            # WakeLock (CPU)
+            PowerManager = autoclass("android.os.PowerManager")
+            pm = cast("android.os.PowerManager",
+                      activity.getSystemService(activity.POWER_SERVICE))
+            self._wake_lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                                             "NewsApp:WakeLock")
+            if self._wake_lock and not self._wake_lock.isHeld():
+                self._wake_lock.acquire()
+
+            # WifiLock (Wi-Fi)
+            WifiManager = autoclass("android.net.wifi.WifiManager")
+            wm = cast("android.net.wifi.WifiManager",
+                      activity.getSystemService(activity.WIFI_SERVICE))
+            self._wifi_lock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                                                "NewsApp:WifiLock")
+            if self._wifi_lock and not self._wifi_lock.isHeld():
+                self._wifi_lock.acquire()
+
+        except Exception:
+            self._wake_lock = None
+            self._wifi_lock = None
+
+    def _release_net_locks(self):
+        if platform != "android":
+            return
+        try:
+            if getattr(self, "_wifi_lock", None) and self._wifi_lock.isHeld():
+                self._wifi_lock.release()
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_wake_lock", None) and self._wake_lock.isHeld():
+                self._wake_lock.release()
+        except Exception:
+            pass
+
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
         Window.fullscreen = False
@@ -383,7 +428,7 @@ class NewsApp(App):
             text="",
             size_hint=(1, None),
             height=dp(16),
-            font_size="20sp",
+            font_size="16sp",
             halign="center",
             valign="middle",
             opacity=0,
@@ -499,9 +544,15 @@ class NewsApp(App):
         Window.bind(on_focus=self._apply_system_ui)
         Window.bind(on_resize=self._apply_system_ui)
 
+        # --- NEW: keep internet on when app goes background
+        self._acquire_net_locks()
+
     def on_resume(self):
         Window.fullscreen = False
         self._apply_system_ui()
+
+        # --- NEW: re-acquire after resume (if OS released)
+        self._acquire_net_locks()
         return True
 
     # ---------- back button handling ----------
@@ -997,6 +1048,8 @@ class NewsApp(App):
             pass
 
     def on_pause(self):
+        # --- NEW: ensure locks are held in background
+        self._acquire_net_locks()
         return True
 
     # ---------------- CONFIG ----------------
@@ -1036,6 +1089,9 @@ class NewsApp(App):
 
     def on_stop(self):
         self.save_config()
+
+        # --- NEW: release locks on real exit
+        self._release_net_locks()
 
     # ---------------- UI HELPERS ----------------
     def set_status(self, text):
