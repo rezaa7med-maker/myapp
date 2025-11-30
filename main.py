@@ -51,8 +51,6 @@ except Exception:
 # CONSTANTS      
 # -------------------------------------------------------------------      
 RSS_FEEDS = [      
-    "https://feeds.bbci.co.uk/persian/rss.xml",      
-    "https://parsi.euronews.com/index.php/rss?level=program&name=world",      
     "https://www.mehrnews.com/rss",      
     "https://www.tabnak.ir/fa/rss/allnews",      
     "https://www.parseek.com/rss/",      
@@ -385,7 +383,7 @@ class NewsApp(App):
             text="",
             size_hint=(1, None),
             height=dp(16),
-            font_size="10sp",
+            font_size="20sp",
             halign="center",
             valign="middle",
             opacity=0,
@@ -454,7 +452,8 @@ class NewsApp(App):
             valign="top",      
         )      
         self.status_label.bind(      
-            width=lambda inst, *_: setattr(inst, "text_size", (inst.width, None))      
+            width=lambda inst, *_: setattr(inst, "text_size", (inst.width, None)      
+            )      
         )      
         self.status_label.bind(      
             texture_size=lambda inst, *_: setattr(inst, "height", inst.texture_size[1])      
@@ -480,7 +479,7 @@ class NewsApp(App):
     def show_exit_toast(self):
         if not hasattr(self, "exit_toast"):
             return
-        self.exit_toast.text = "Press back again to exit."
+        self.exit_toast.text = "Press the back button twice to exit."
         self.exit_toast.opacity = 1
         if self._toast_ev is not None:
             try:
@@ -515,11 +514,11 @@ class NewsApp(App):
                 self._active_popup = None      
                 return True      
             now = time.time()      
-            if now - self._last_back_time < 0.4:      
+            if now - self._last_back_time < 0.6:      
                 self.move_to_background()      
             else:      
                 self._last_back_time = now      
-                self.set_status("برای خروج، دوبار پشت سر هم دکمه برگشت را بزنید.")      
+                self.set_status("Press the back button twice to exit.")      
                 self.show_exit_toast()      
             return True      
         return False      
