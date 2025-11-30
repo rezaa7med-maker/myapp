@@ -452,7 +452,8 @@ class NewsApp(App):
             valign="top",
         )
         self.status_label.bind(
-            width=lambda inst, *_: setattr(inst, "text_size", (inst.width, None))
+            width=lambda inst, *_: setattr(inst, "text_size", (inst.width, None)
+            )
         )
         self.status_label.bind(
             texture_size=lambda inst, *_: setattr(inst, "height", inst.texture_size[1])
