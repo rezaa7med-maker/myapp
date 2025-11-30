@@ -149,7 +149,8 @@ def collect_news_safe(log_func=print):
         t.join(timeout=remaining)
     return items, total_entries
 
-def send_emails_safe(sender_email, app_password, to_emails, news_items, progress_cb=None):
+def send_emails_safe(sender_email, app_password, to_emails, news_items,
+                     progress_cb=None, wait_start_cb=None, wait_end_cb=None):
     def _is_net_err(e):
         msg = str(e)
         return (
@@ -163,7 +164,10 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
             ("timeout" in msg.lower()) or
             ("Temporary failure in name resolution" in msg) or
             ("Name or service not known" in msg) or
-            ("SMTPServerDisconnected" in msg)
+            ("SMTPServerDisconnected" in msg) or
+            ("EOF occurred in violation of protocol" in msg) or
+            ("Connection reset by peer" in msg) or
+            ("Broken pipe" in msg)
         )
 
     last_err = None
@@ -180,6 +184,7 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
             total_n = len(news_items)
             i = 0
             server = None
+            waiting = False
 
             while i < total_n:
                 try:
@@ -188,6 +193,15 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
                             "smtp.gmail.com", 465, context=context, timeout=20
                         )
                         server.login(sender_email, app_password)
+
+                        # if we were waiting and now reconnected:
+                        if waiting:
+                            waiting = False
+                            if wait_end_cb:
+                                try:
+                                    wait_end_cb()
+                                except Exception:
+                                    pass
 
                     title, summary = news_items[i]
                     if progress_cb:
@@ -209,12 +223,20 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
                     )
 
                     i += 1
-                    if i < total_n:
+                    if i < total_n - 1:
                         time.sleep(random.uniform(*EMAIL_DELAY_RANGE))
 
                 except Exception as e:
                     last_err = e
                     if _is_net_err(e):
+                        if not waiting:
+                            waiting = True
+                            if wait_start_cb:
+                                try:
+                                    wait_start_cb()
+                                except Exception:
+                                    pass
+
                         try:
                             if server is not None:
                                 try:
@@ -223,6 +245,7 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
                                     pass
                         finally:
                             server = None
+
                         time.sleep(random.uniform(*NET_RETRY_DELAY_RANGE))
                         continue
                     else:
@@ -239,13 +262,11 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
                 if verified
                 else "Sent without SSL verification"
             )
-
         except Exception as e:
             last_err = e
             if verified and "CERTIFICATE_VERIFY_FAILED" in str(e):
                 continue
             break
-
     return False, str(last_err)
 
 # -------------------------------------------------------------------
@@ -371,7 +392,6 @@ class NewsApp(App):
                 window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
-                window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
                 window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
                 decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
             _do()
@@ -446,6 +466,7 @@ class NewsApp(App):
 
         self._last_back_time = 0
         self._active_popup = None
+        self._waiting_popup = None
 
         root = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
@@ -614,6 +635,30 @@ class NewsApp(App):
                 self.show_exit_toast()
             return True
         return False
+
+    # ---------------- WAITING POPUP ----------------
+    def show_waiting_popup(self):
+        if getattr(self, "_waiting_popup", None) and self._waiting_popup.parent:
+            return
+        box = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
+        box.add_widget(Label(text="waiting for internet connection ...", font_size="16sp"))
+        popup = Popup(
+            title="Network",
+            content=box,
+            size_hint=(0.7, None),
+            height=dp(160),
+            auto_dismiss=False,
+        )
+        self._waiting_popup = popup
+        popup.open()
+
+    def hide_waiting_popup(self):
+        try:
+            if getattr(self, "_waiting_popup", None) and self._waiting_popup.parent:
+                self._waiting_popup.dismiss()
+        except Exception:
+            pass
+        self._waiting_popup = None
 
     def show_menu_popup(self):
         wrapper = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
@@ -1244,21 +1289,12 @@ class NewsApp(App):
                             0,
                         )
 
-                    # --- NEW: retry on Errno 101 / network unreachable ---
-                    ok, msg = False, ""
-                    last_msg = ""
-                    for attempt in range(NET_RETRY_COUNT + 1):
-                        ok, msg = send_emails_safe(
-                            sender_email, app_pass, to_emails, batch_items,
-                            progress_cb=progress_cb
-                        )
-                        if ok:
-                            break
-                        last_msg = msg or ""
-                        if ("Errno 101" in last_msg) or ("Network is unreachable" in last_msg):
-                            time.sleep(random.uniform(*NET_RETRY_DELAY_RANGE))
-                            continue
-                        break
+                    ok, msg = send_emails_safe(
+                        sender_email, app_pass, to_emails, batch_items,
+                        progress_cb=progress_cb,
+                        wait_start_cb=lambda: Clock.schedule_once(lambda *_: self.show_waiting_popup(), 0),
+                        wait_end_cb=lambda: Clock.schedule_once(lambda *_: self.hide_waiting_popup(), 0),
+                    )
 
                     if ok:
                         success_count += 1
