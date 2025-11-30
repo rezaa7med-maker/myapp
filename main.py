@@ -149,25 +149,63 @@ def collect_news_safe(log_func=print):
         t.join(timeout=remaining)
     return items, total_entries
 
+
+def internet_is_up(timeout=3):
+    """
+    Very small connectivity check that works on Android too.
+    """
+    import socket
+    try:
+        socket.setdefaulttimeout(timeout)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(("8.8.8.8", 53))  # Google DNS
+        s.close()
+        return True
+    except Exception:
+        return False
+
+
+def wait_for_internet(wait_start_cb=None, wait_end_cb=None):
+    """
+    Blocks until internet is back. Shows/hides popup via callbacks.
+    """
+    if wait_start_cb:
+        try:
+            wait_start_cb()
+        except Exception:
+            pass
+
+    while not internet_is_up():
+        time.sleep(random.uniform(*NET_RETRY_DELAY_RANGE))
+
+    if wait_end_cb:
+        try:
+            wait_end_cb()
+        except Exception:
+            pass
+
+
 def send_emails_safe(sender_email, app_password, to_emails, news_items,
                      progress_cb=None, wait_start_cb=None, wait_end_cb=None):
+
     def _is_net_err(e):
-        msg = str(e)
+        msg = str(e).lower()
         return (
-            ("Errno 101" in msg) or
-            ("Network is unreachable" in msg) or
-            ("Errno 111" in msg) or
-            ("Connection refused" in msg) or
-            ("Errno 113" in msg) or
-            ("No route to host" in msg) or
-            ("timed out" in msg.lower()) or
-            ("timeout" in msg.lower()) or
-            ("Temporary failure in name resolution" in msg) or
-            ("Name or service not known" in msg) or
-            ("SMTPServerDisconnected" in msg) or
-            ("EOF occurred in violation of protocol" in msg) or
-            ("Connection reset by peer" in msg) or
-            ("Broken pipe" in msg)
+            ("errno 101" in msg) or
+            ("network is unreachable" in msg) or
+            ("errno 111" in msg) or
+            ("connection refused" in msg) or
+            ("errno 113" in msg) or
+            ("no route to host" in msg) or
+            ("timed out" in msg) or
+            ("timeout" in msg) or
+            ("temporary failure in name resolution" in msg) or
+            ("name or service not known" in msg) or
+            ("smtpserverdisconnected" in msg) or
+            ("eof occurred in violation of protocol" in msg) or
+            ("connection reset by peer" in msg) or
+            ("broken pipe" in msg) or
+            ("bad file descriptor" in msg)
         )
 
     last_err = None
@@ -184,24 +222,17 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items,
             total_n = len(news_items)
             i = 0
             server = None
-            waiting = False
 
             while i < total_n:
                 try:
                     if server is None:
+                        if not internet_is_up():
+                            wait_for_internet(wait_start_cb, wait_end_cb)
+
                         server = smtplib.SMTP_SSL(
                             "smtp.gmail.com", 465, context=context, timeout=20
                         )
                         server.login(sender_email, app_password)
-
-                        # if we were waiting and now reconnected:
-                        if waiting:
-                            waiting = False
-                            if wait_end_cb:
-                                try:
-                                    wait_end_cb()
-                                except Exception:
-                                    pass
 
                     title, summary = news_items[i]
                     if progress_cb:
@@ -218,25 +249,16 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items,
                             summary,
                         ]
                     )
-                    server.sendmail(
-                        sender_email, to_emails, msg.encode("utf-8")
-                    )
+                    server.sendmail(sender_email, to_emails, msg.encode("utf-8"))
 
                     i += 1
-                    if i < total_n - 1:
+                    if i < total_n:
                         time.sleep(random.uniform(*EMAIL_DELAY_RANGE))
 
                 except Exception as e:
                     last_err = e
-                    if _is_net_err(e):
-                        if not waiting:
-                            waiting = True
-                            if wait_start_cb:
-                                try:
-                                    wait_start_cb()
-                                except Exception:
-                                    pass
 
+                    if _is_net_err(e) or (not internet_is_up()):
                         try:
                             if server is not None:
                                 try:
@@ -246,10 +268,10 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items,
                         finally:
                             server = None
 
-                        time.sleep(random.uniform(*NET_RETRY_DELAY_RANGE))
+                        wait_for_internet(wait_start_cb, wait_end_cb)
                         continue
-                    else:
-                        raise
+
+                    raise
 
             try:
                 if server is not None:
@@ -257,16 +279,14 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items,
             except Exception:
                 pass
 
-            return True, (
-                "Sent with verified SSL"
-                if verified
-                else "Sent without SSL verification"
-            )
+            return True, ("Sent with verified SSL" if verified else "Sent without SSL verification")
+
         except Exception as e:
             last_err = e
             if verified and "CERTIFICATE_VERIFY_FAILED" in str(e):
                 continue
             break
+
     return False, str(last_err)
 
 # -------------------------------------------------------------------
