@@ -8,11 +8,9 @@ import base64
 import time
 import random
 from kivy.config import Config
-
 Config.set("graphics", "fullscreen", "0")
 Config.set("graphics", "borderless", "0")
 Config.set("graphics", "resizable", "1")
-
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
@@ -149,8 +147,8 @@ def collect_news_safe(log_func=print):
         if remaining <= 0:
             break
         t.join(timeout=remaining)
-
     return items, total_entries
+
 
 def internet_is_up(timeout=3):
     """
@@ -166,6 +164,7 @@ def internet_is_up(timeout=3):
     except Exception:
         return False
 
+
 def wait_for_internet(wait_start_cb=None, wait_end_cb=None):
     """
     Blocks until internet is back. Shows/hides popup via callbacks.
@@ -175,16 +174,20 @@ def wait_for_internet(wait_start_cb=None, wait_end_cb=None):
             wait_start_cb()
         except Exception:
             pass
+
     while not internet_is_up():
         time.sleep(random.uniform(*NET_RETRY_DELAY_RANGE))
+
     if wait_end_cb:
         try:
             wait_end_cb()
         except Exception:
             pass
 
+
 def send_emails_safe(sender_email, app_password, to_emails, news_items,
                      progress_cb=None, wait_start_cb=None, wait_end_cb=None):
+
     def _is_net_err(e):
         msg = str(e).lower()
         return (
@@ -219,11 +222,13 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items,
             total_n = len(news_items)
             i = 0
             server = None
+
             while i < total_n:
                 try:
                     if server is None:
                         if not internet_is_up():
                             wait_for_internet(wait_start_cb, wait_end_cb)
+
                         server = smtplib.SMTP_SSL(
                             "smtp.gmail.com", 465, context=context, timeout=20
                         )
@@ -245,12 +250,14 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items,
                         ]
                     )
                     server.sendmail(sender_email, to_emails, msg.encode("utf-8"))
+
                     i += 1
                     if i < total_n:
                         time.sleep(random.uniform(*EMAIL_DELAY_RANGE))
 
                 except Exception as e:
                     last_err = e
+
                     if _is_net_err(e) or (not internet_is_up()):
                         try:
                             if server is not None:
@@ -260,8 +267,10 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items,
                                     pass
                         finally:
                             server = None
+
                         wait_for_internet(wait_start_cb, wait_end_cb)
                         continue
+
                     raise
 
             try:
@@ -385,13 +394,13 @@ class ParallaxHolder(FloatLayout):
 # MAIN APP
 # -------------------------------------------------------------------
 class NewsApp(App):
+
     def _apply_system_ui(self, *_):
         if platform != "android":
             return
         try:
             from android.runnable import run_on_ui_thread
             from jnius import autoclass
-
             @run_on_ui_thread
             def _do():
                 PythonActivity = autoclass("org.kivy.android.PythonActivity")
@@ -405,7 +414,6 @@ class NewsApp(App):
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
                 window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
                 decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
-
             _do()
         except Exception:
             pass
@@ -431,11 +439,12 @@ class NewsApp(App):
             from jnius import autoclass, cast
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             activity = PythonActivity.mActivity
+
             PowerManager = autoclass("android.os.PowerManager")
             pm = cast("android.os.PowerManager",
                       activity.getSystemService(activity.POWER_SERVICE))
             self._wake_lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
-                                            "NewsApp:WakeLock")
+                                             "NewsApp:WakeLock")
             if self._wake_lock and not self._wake_lock.isHeld():
                 self._wake_lock.acquire()
 
@@ -446,6 +455,7 @@ class NewsApp(App):
                                                 "NewsApp:WifiLock")
             if self._wifi_lock and not self._wifi_lock.isHeld():
                 self._wifi_lock.acquire()
+
         except Exception:
             self._wake_lock = None
             self._wifi_lock = None
@@ -467,14 +477,13 @@ class NewsApp(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
         Window.fullscreen = False
-
         self.config_path = os.path.join(self.user_data_dir, "config.json")
         self.sent_titles_path = os.path.join(self.user_data_dir, "sent_titles.txt")
-
         self.senders = []
         self.recipients = []
         self.sent_titles = set()
         self.max_emails_value = 20
+
         self._last_back_time = 0
         self._active_popup = None
         self._waiting_popup = None
@@ -486,7 +495,6 @@ class NewsApp(App):
             size_hint=(1, None),
             height=BTN_HEIGHT,
         )
-
         menu_btn = Button(
             text="[b]MENU[/b]",
             markup=True,
@@ -529,7 +537,6 @@ class NewsApp(App):
         )
         content.bind(minimum_height=content.setter("height"))
         content.pos_hint = {"x": 0, "top": 1}
-
         parallax.add_widget(content)
         parallax.set_content(content)
 
@@ -601,7 +608,6 @@ class NewsApp(App):
         self.sent_titles = load_sent_titles(self.sent_titles_path)
         self.refresh_senders_list()
         self.refresh_recipients_list()
-
         return root
 
     def show_exit_toast(self):
@@ -614,10 +620,8 @@ class NewsApp(App):
                 self._toast_ev.cancel()
             except Exception:
                 pass
-
         def hide_toast(dt):
             self.exit_toast.opacity = 0
-
         self._toast_ev = Clock.schedule_once(hide_toast, 3)
 
     def on_start(self):
@@ -628,6 +632,7 @@ class NewsApp(App):
         Window.bind(on_keyboard=self.on_keyboard)
         Window.bind(on_focus=self._apply_system_ui)
         Window.bind(on_resize=self._apply_system_ui)
+
         self._acquire_net_locks()
 
     def on_resume(self):
@@ -677,6 +682,7 @@ class NewsApp(App):
 
     def show_menu_popup(self):
         wrapper = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
+
         reset_btn = Button(
             text="Reset RSS",
             size_hint_y=None,
@@ -693,8 +699,10 @@ class NewsApp(App):
             background_color=(1.0, 0.8, 0.3, 1.0),
             color=(0, 0, 0, 1),
         )
+
         wrapper.add_widget(reset_btn)
         wrapper.add_widget(exit_btn)
+
         popup = Popup(
             title="Menu",
             content=wrapper,
@@ -702,8 +710,10 @@ class NewsApp(App):
             height=dp(200),
             auto_dismiss=True,
         )
+
         self._active_popup = popup
         popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
+
         reset_btn.bind(on_release=lambda *_: (popup.dismiss(), self.reset_rss()))
         exit_btn.bind(on_release=lambda *_: (popup.dismiss(), self.move_to_background()))
         popup.open()
@@ -767,8 +777,10 @@ class NewsApp(App):
             height=dp(200),
             auto_dismiss=False,
         )
+
         self._active_popup = popup
         popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
+
         yes_btn.bind(on_release=lambda *_: (popup.dismiss(), on_yes()))
         no_btn.bind(on_release=lambda *_: popup.dismiss())
         popup.open()
@@ -814,7 +826,6 @@ class NewsApp(App):
         )
         list_scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         list_scroll.add_widget(self.senders_list_layout)
-
         list_container = BoxLayout(size_hint=(1, 1), padding=dp(4))
         with list_container.canvas.before:
             Color(0.12, 0.12, 0.12, 1)
@@ -829,7 +840,6 @@ class NewsApp(App):
             border.rectangle = (*list_container.pos, *list_container.size)
 
         list_container.bind(pos=upd, size=upd)
-
         list_container.add_widget(list_scroll)
         box.add_widget(list_container)
         return box
@@ -875,7 +885,6 @@ class NewsApp(App):
         )
         list_scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         list_scroll.add_widget(self.recipients_list_layout)
-
         list_container = BoxLayout(size_hint=(1, 1), padding=dp(4))
         with list_container.canvas.before:
             Color(0.12, 0.12, 0.12, 1)
@@ -890,7 +899,6 @@ class NewsApp(App):
             border.rectangle = (*list_container.pos, *list_container.size)
 
         list_container.bind(pos=upd, size=upd)
-
         list_container.add_widget(list_scroll)
         box.add_widget(list_container)
         return box
@@ -922,16 +930,11 @@ class NewsApp(App):
         is_edit = edit_index is not None
         initial_email = self.senders[edit_index]["email"] if is_edit else ""
         initial_pw = self.senders[edit_index]["password"] if is_edit else ""
-
         wrapper = BoxLayout(
             orientation="vertical",
             spacing=dp(10),
             padding=dp(12),
         )
-
-        # ✅ spacer to increase distance from the blue line
-        wrapper.add_widget(Widget(size_hint_y=None, height=dp(12)))
-
         wrapper.add_widget(
             Label(
                 text="Email Address",
@@ -950,7 +953,6 @@ class NewsApp(App):
             padding=[dp(8), dp(10), dp(8), dp(10)],
         )
         wrapper.add_widget(email_input)
-
         wrapper.add_widget(
             Label(
                 text="App Password",
@@ -970,7 +972,6 @@ class NewsApp(App):
             padding=[dp(8), dp(10), dp(8), dp(10)],
         )
         wrapper.add_widget(pw_input)
-
         btn_row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -982,7 +983,6 @@ class NewsApp(App):
         btn_row.add_widget(save_btn)
         btn_row.add_widget(cancel_btn)
         wrapper.add_widget(btn_row)
-
         popup = Popup(
             title="Edit Sender" if is_edit else "Add Sender",
             content=wrapper,
@@ -990,6 +990,7 @@ class NewsApp(App):
             height=dp(320),
             auto_dismiss=False,
         )
+
         self._active_popup = popup
         popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
 
@@ -1054,6 +1055,7 @@ class NewsApp(App):
             height=dp(240),
             auto_dismiss=False,
         )
+
         self._active_popup = popup
         popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
 
@@ -1116,6 +1118,7 @@ class NewsApp(App):
             height=dp(240),
             auto_dismiss=False,
         )
+
         self._active_popup = popup
         popup.bind(on_dismiss=lambda *_: setattr(self, "_active_popup", None))
 
@@ -1260,7 +1263,6 @@ class NewsApp(App):
         if not self.recipients:
             self.set_status("Please add at least one recipient.")
             return
-
         max_emails = self.max_emails_value or 20
         to_emails = [x.strip() for x in self.recipients if str(x).strip()]
         self.set_buttons_enabled(False)
@@ -1275,7 +1277,6 @@ class NewsApp(App):
                     if t not in seen:
                         unique_items.append((t, s))
                         seen.add(t)
-
                 new_items = [(t, s) for (t, s) in unique_items if t not in self.sent_titles]
                 batch_items = new_items[:max_emails]
                 if not batch_items:
@@ -1291,6 +1292,7 @@ class NewsApp(App):
                 results = []
                 success_count = 0
                 sent_per_sender = {}
+
                 for idx, s in enumerate(self.senders):
                     sender_email = s.get("email", "").strip()
                     app_pass = s.get("password", "").strip()
@@ -1313,6 +1315,7 @@ class NewsApp(App):
                         wait_start_cb=lambda: Clock.schedule_once(lambda *_: self.show_waiting_popup(), 0),
                         wait_end_cb=lambda: Clock.schedule_once(lambda *_: self.hide_waiting_popup(), 0),
                     )
+
                     if ok:
                         success_count += 1
                         results.append(f"{sender_email}: OK ({len(batch_items)} items)")
@@ -1320,6 +1323,7 @@ class NewsApp(App):
                     else:
                         results.append(f"{sender_email}: FAIL ({msg})")
                         sent_per_sender[sender_email] = 0
+
                     if idx < len(self.senders) - 1:
                         time.sleep(random.uniform(*SENDER_DELAY_RANGE))
 
