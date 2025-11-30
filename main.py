@@ -507,21 +507,20 @@ class NewsApp(App):
     # ---------- back button handling ----------  
     # 1 press = cancel if popup open (new requirement)  
     # otherwise previous double-back behavior remains  
-    def on_keyboard(self, window, key, scancode, codepoint, modifier):      
-        if key == 27:      
-            if self._active_popup and self._active_popup.parent:      
-                self._active_popup.dismiss()      
-                self._active_popup = None      
-                return True      
-            now = time.time()      
-            if now - self._last_back_time < 0.6:      
-                self.move_to_background()      
-            else:      
-                self._last_back_time = now      
-                self.set_status("Press the back button twice to exit.")      
-                self.show_exit_toast()      
-            return True      
-        return False      
+    def on_keyboard(self, window, key, scancode, codepoint, modifier):
+    if key == 27:
+        if self._active_popup and self._active_popup.parent:
+            self._active_popup.dismiss()
+            self._active_popup = None
+            return True
+        now = time.time()
+        if now - self._last_back_time < 0.6:
+            self.move_to_background()
+        else:
+            self._last_back_time = now
+            self.show_exit_toast()
+        return True
+    return False      
   
     def show_menu_popup(self):      
         wrapper = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))      
