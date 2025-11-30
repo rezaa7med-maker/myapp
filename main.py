@@ -150,6 +150,22 @@ def collect_news_safe(log_func=print):
     return items, total_entries
 
 def send_emails_safe(sender_email, app_password, to_emails, news_items, progress_cb=None):
+    def _is_net_err(e):
+        msg = str(e)
+        return (
+            ("Errno 101" in msg) or
+            ("Network is unreachable" in msg) or
+            ("Errno 111" in msg) or
+            ("Connection refused" in msg) or
+            ("Errno 113" in msg) or
+            ("No route to host" in msg) or
+            ("timed out" in msg.lower()) or
+            ("timeout" in msg.lower()) or
+            ("Temporary failure in name resolution" in msg) or
+            ("Name or service not known" in msg) or
+            ("SMTPServerDisconnected" in msg)
+        )
+
     last_err = None
     for verified in (True, False):
         try:
@@ -160,17 +176,26 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
                     context = ssl.create_default_context()
             else:
                 context = ssl._create_unverified_context()
-            with smtplib.SMTP_SSL(
-                "smtp.gmail.com", 465, context=context, timeout=20
-            ) as server:
-                server.login(sender_email, app_password)
-                total_n = len(news_items)
-                for i, (title, summary) in enumerate(news_items):
+
+            total_n = len(news_items)
+            i = 0
+            server = None
+
+            while i < total_n:
+                try:
+                    if server is None:
+                        server = smtplib.SMTP_SSL(
+                            "smtp.gmail.com", 465, context=context, timeout=20
+                        )
+                        server.login(sender_email, app_password)
+
+                    title, summary = news_items[i]
                     if progress_cb:
                         try:
                             progress_cb(i + 1, total_n)
                         except Exception:
                             pass
+
                     msg = "\n".join(
                         [
                             f"To: {', '.join(to_emails)}",
@@ -182,18 +207,45 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items, progress
                     server.sendmail(
                         sender_email, to_emails, msg.encode("utf-8")
                     )
-                    if i < total_n - 1:
+
+                    i += 1
+                    if i < total_n:
                         time.sleep(random.uniform(*EMAIL_DELAY_RANGE))
+
+                except Exception as e:
+                    last_err = e
+                    if _is_net_err(e):
+                        try:
+                            if server is not None:
+                                try:
+                                    server.quit()
+                                except Exception:
+                                    pass
+                        finally:
+                            server = None
+                        time.sleep(random.uniform(*NET_RETRY_DELAY_RANGE))
+                        continue
+                    else:
+                        raise
+
+            try:
+                if server is not None:
+                    server.quit()
+            except Exception:
+                pass
+
             return True, (
                 "Sent with verified SSL"
                 if verified
                 else "Sent without SSL verification"
             )
+
         except Exception as e:
             last_err = e
             if verified and "CERTIFICATE_VERIFY_FAILED" in str(e):
                 continue
             break
+
     return False, str(last_err)
 
 # -------------------------------------------------------------------
@@ -318,6 +370,7 @@ class NewsApp(App):
                 decor = window.getDecorView()
                 window.clearFlags(LayoutParams.FLAG_FULLSCREEN)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS)
+                window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
                 window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
                 window.addFlags(LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
                 decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE)
@@ -1116,7 +1169,7 @@ class NewsApp(App):
                             f"RSS OK\n"
                             f"Total items: {len(unique_titles)}\n"
                             f"Sent items: {sent_count}\n"
-                            f"remaining: {remaining_new}\n"
+                            f"Available: {remaining_new}\n"
                             f"Elapsed time: {elapsed:.1f}s"
                         ),
                         self.set_buttons_enabled(True),
