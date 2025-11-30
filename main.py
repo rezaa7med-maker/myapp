@@ -383,7 +383,7 @@ class NewsApp(App):
             text="",
             size_hint=(1, None),
             height=dp(16),
-            font_size="20sp",
+            font_size="16sp",
             halign="center",
             valign="middle",
             opacity=0,
