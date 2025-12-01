@@ -2,6 +2,7 @@
 title = Campaign
 package.name = myapp
 package.domain = com.rezaa7med.campaign
+icon.filename = icon.png
 
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
