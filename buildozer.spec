@@ -1,5 +1,5 @@
 [app]
-title = Campaign
+title = Campaign FA
 package.name = myapp
 package.domain = com.rezaa7med.campaign
 icon.filename = icon.png
