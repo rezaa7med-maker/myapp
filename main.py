@@ -4,8 +4,6 @@ import threading
 import traceback
 import ssl
 import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 import base64
 import time
 import random
@@ -129,9 +127,8 @@ def collect_news_safe(log_func=print):
             for e in entries:
                 title = normalize_title(getattr(e, "title", ""))
                 summary = getattr(e, "summary", "").strip() or title
-                link = getattr(e, "link", "").strip()
                 if title:
-                    local_items.append((title, summary, link))
+                    local_items.append((title, summary))
             with lock:
                 total_entries += len(entries)
                 items.extend(local_items)
@@ -1225,7 +1222,7 @@ class NewsApp(App):
                 elapsed = time.time() - start
                 unique_titles = []
                 seen = set()
-                for t, s, l in items:
+                for t, s in items:
                     if t not in seen:
                         unique_titles.append((t, s))
                         seen.add(t)
@@ -1276,11 +1273,11 @@ class NewsApp(App):
                 items, total = collect_news_safe()
                 unique_items = []
                 seen = set()
-                for t, s, l in items:
+                for t, s in items:
                     if t not in seen:
                         unique_items.append((t, s))
                         seen.add(t)
-                new_items = [(t, s, l) for (t, s, l) in unique_items if t not in self.sent_titles]
+                new_items = [(t, s) for (t, s) in unique_items if t not in self.sent_titles]
                 batch_items = new_items[:max_emails]
                 if not batch_items:
                     Clock.schedule_once(
@@ -1331,11 +1328,11 @@ class NewsApp(App):
                         time.sleep(random.uniform(*SENDER_DELAY_RANGE))
 
                 if success_count > 0:
-                    sent_now_titles = [t for t, _, _ in batch_items]
+                    sent_now_titles = [t for t, _ in batch_items]
                     append_sent_titles(self.sent_titles_path, sent_now_titles)
                     self.sent_titles.update(sent_now_titles)
 
-                remaining_after = len([t for t, _, _ in new_items if t not in set(t for t, _, _ in batch_items)])
+                remaining_after = len([t for t, _ in new_items if t not in set(t for t, _ in batch_items)])
                 out = (
                     "Finished.\n"
                     f"Batch sent: {len(batch_items)}\n"
