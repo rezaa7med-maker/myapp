@@ -1,6 +1,6 @@
 [app]
-title = Campaign2
-package.name = myapp2
+title = Campaign 2
+package.name = myapp_V2
 package.domain = com.rezaa7med.campaign
 icon.filename = icon.png
 
