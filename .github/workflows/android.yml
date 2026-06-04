@@ -24,6 +24,7 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
+      # --- تغییر مهم: کلید کش عوض شد تا از کش قدیمی استفاده نشه ---
       - name: Cache build dependencies
         uses: actions/cache@v4
         with:
@@ -33,9 +34,17 @@ jobs:
             .buildozer
             ~/.gradle
             ~/.android
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v2
           restore-keys: |
             ${{ runner.os }}-buildozer-
+
+      # --- پاک کردن اجباری کش Buildozer (اختیاری اما مفید) ---
+      - name: Clean Buildozer cache
+        run: |
+          # این دستور فایل‌های موقت رو پاک می‌کنه
+          if [ -f .buildozer/default/.state ]; then
+            buildozer android clean
+          fi
 
       - name: Install system deps
         run: |
@@ -78,4 +87,3 @@ jobs:
             bin/*.apk
             .buildozer/android/platform/build-*/outputs/apk/debug/*.apk
           if-no-files-found: error
-          
