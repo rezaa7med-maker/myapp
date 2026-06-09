@@ -15,10 +15,7 @@ jobs:
 
       - name: Update buildozer.spec with stable configuration
         run: |
-          # اصلاح requirements به پایتون 3.10 و حذف pyjnius
           sed -i 's/^requirements = .*/requirements = hostpython3==3.10.11, python3==3.10.11, kivy==2.3.0, requests, feedparser==6.0.11, certifi/' buildozer.spec
-          
-          # اضافه یا به‌روزرسانی android.ndk بدون ایجاد تکراری
           if grep -q '^android.ndk' buildozer.spec; then
             sed -i 's/^android.ndk = .*/android.ndk = 25c/' buildozer.spec
           else
@@ -45,12 +42,13 @@ jobs:
             .buildozer
             ~/.gradle
             ~/.android
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v4
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v5
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
       - name: Full clean of previous builds
-        run: buildozer android clean || true
+        run: |
+          python -m buildozer android clean || true
 
       - name: Install system deps
         run: |
@@ -66,7 +64,7 @@ jobs:
       - name: Install buildozer and cython
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade git+https://github.com/kivy/buildozer.git
+          pip install buildozer
           pip install cython==0.29.36
 
       - name: Set up Android SDK
@@ -76,7 +74,7 @@ jobs:
         run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses
 
       - name: Build APK
-        run: buildozer android debug
+        run: python -m buildozer android debug
 
       - name: List APK outputs
         run: |
