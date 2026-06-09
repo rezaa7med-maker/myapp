@@ -42,7 +42,7 @@ jobs:
             .buildozer
             ~/.gradle
             ~/.android
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v5
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v6
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
@@ -74,6 +74,8 @@ jobs:
         run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses
 
       - name: Build APK
+        env:
+          CFLAGS: "-Wno-error=implicit-function-declaration"
         run: python -m buildozer android debug
 
       - name: List APK outputs
