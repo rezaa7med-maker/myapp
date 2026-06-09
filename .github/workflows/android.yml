@@ -13,6 +13,13 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Update buildozer.spec with stable configuration
+        run: |
+          # تغییر requirements به پایتون 3.10 و حذف pyjnius
+          sed -i 's/^requirements = .*/requirements = hostpython3==3.10.11, python3==3.10.11, kivy==2.3.0, requests, feedparser==6.0.11, certifi/' buildozer.spec
+          # اضافه کردن NDK نسخه 25c
+          echo "android.ndk = 25c" >> buildozer.spec
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -24,7 +31,7 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      # --- تغییر مهم: کلید کش عوض شد تا از کش قدیمی استفاده نشه ---
+      # --- استفاده از کش با کلید جدید برای جلوگیری از تداخل ---
       - name: Cache build dependencies
         uses: actions/cache@v4
         with:
@@ -34,17 +41,13 @@ jobs:
             .buildozer
             ~/.gradle
             ~/.android
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v2
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v3
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
-      # --- پاک کردن اجباری کش Buildozer (اختیاری اما مفید) ---
-      - name: Clean Buildozer cache
-        run: |
-          # این دستور فایل‌های موقت رو پاک می‌کنه
-          if [ -f .buildozer/default/.state ]; then
-            buildozer android clean
-          fi
+      # --- پاکسازی کامل پروژه‌های قبلی (بدون قید و شرط) ---
+      - name: Full clean of previous builds
+        run: buildozer android clean || true   # حتی اگر قبلاً ساخته نشده باشد
 
       - name: Install system deps
         run: |
