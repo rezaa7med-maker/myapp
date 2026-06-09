@@ -42,7 +42,7 @@ jobs:
             .buildozer
             ~/.gradle
             ~/.android
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v7
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v8
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
@@ -61,9 +61,11 @@ jobs:
             autoconf automake libtool pkg-config \
             zlib1g-dev libltdl-dev
 
-      - name: Install buildozer and cython
+      - name: Install buildozer and cython (with pip downgrade)
         run: |
-          python -m pip install --upgrade pip==24.0
+          # اجباری کردن نسخهٔ قدیمی pip که با ابزارهای داخلی سازگار باشد
+          python -m pip install --upgrade pip==23.0
+          python -m pip --version   # چاپ نسخه برای اطمینان
           pip install buildozer
           pip install cython==0.29.36
 
