@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Update buildozer.spec with stable configuration
+      - name: Update buildozer.spec
         run: |
           sed -i 's/^requirements = .*/requirements = hostpython3==3.10.11, python3==3.10.11, kivy==2.3.0, requests, feedparser==6.0.11, certifi/' buildozer.spec
           
@@ -24,9 +24,9 @@ jobs:
           fi
           
           if grep -q '^android.p4a_args' buildozer.spec; then
-            sed -i 's/^android.p4a_args = .*/android.p4a_args = --no-upgrade-pip/' buildozer.spec
+            sed -i 's/^android.p4a_args = .*/android.p4a_args = --no-upgrade-pip --no-ensurepip/' buildozer.spec
           else
-            echo "android.p4a_args = --no-upgrade-pip" >> buildozer.spec
+            echo "android.p4a_args = --no-upgrade-pip --no-ensurepip" >> buildozer.spec
           fi
 
       - name: Set up Python
@@ -49,23 +49,18 @@ jobs:
             .buildozer
             \~/.gradle
             \~/.android
-          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v15
+          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v16
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
-      - name: Full clean of previous builds
-        run: |
-          python -m buildozer android clean || true
+      - name: Full clean
+        run: python -m buildozer android clean || true
 
-      - name: Install system deps
+      - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y \
-            git zip unzip openjdk-17-jdk \
-            python3-pip python3-venv \
-            libffi-dev libssl-dev \
-            build-essential \
-            autoconf automake libtool pkg-config \
+          sudo apt install -y git zip unzip openjdk-17-jdk python3-pip python3-venv \
+            libffi-dev libssl-dev build-essential autoconf automake libtool pkg-config \
             zlib1g-dev libltdl-dev
 
       - name: Install buildozer and cython
@@ -76,7 +71,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK licenses
+      - name: Accept licenses
         run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses
 
       - name: Build APK
