@@ -21,7 +21,7 @@ jobs:
           else
             echo "android.ndk = 25c" >> buildozer.spec
           fi
-          # افزودن --no-upgrade-pip به android.p4a_args
+          # تنظیم --no-upgrade-pip
           if grep -q '^android.p4a_args' buildozer.spec; then
             sed -i 's/^android.p4a_args = .*/android.p4a_args = --no-upgrade-pip/' buildozer.spec
           else
@@ -48,7 +48,7 @@ jobs:
             .buildozer
             ~/.gradle
             ~/.android
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v10
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v11
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
@@ -67,12 +67,17 @@ jobs:
             autoconf automake libtool pkg-config \
             zlib1g-dev libltdl-dev
 
+      - name: Force downgrade pip to compatible version
+        run: |
+          python -m pip cache purge
+          python -m pip install --force-reinstall --no-cache-dir pip==23.0
+          python -m pip --version
+          python -c "from pip._vendor.resolvelib.structs import RequirementInformation; print('OK')"
+
       - name: Install buildozer and cython
         run: |
-          python -m pip install --upgrade pip==23.0
-          python -m pip --version
-          pip install --upgrade git+https://github.com/kivy/buildozer.git
-          pip install cython==0.29.36
+          pip install --no-cache-dir --upgrade git+https://github.com/kivy/buildozer.git
+          pip install --no-cache-dir cython==0.29.36
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
