@@ -47,7 +47,7 @@ jobs:
             .buildozer
             ~/.gradle
             ~/.android
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v13
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v14
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
@@ -66,10 +66,10 @@ jobs:
             autoconf automake libtool pkg-config \
             zlib1g-dev libltdl-dev
 
-      - name: Force downgrade pip to compatible version (21.3.1)
+      - name: Force downgrade pip to compatible version (21.2.4)
         run: |
           python -m pip cache purge
-          python -m pip install --force-reinstall --no-cache-dir pip==21.3.1
+          python -m pip install --force-reinstall --no-cache-dir pip==21.2.4
           python -m pip --version
           python -c "from pip._vendor.resolvelib.structs import RequirementInformation; print('OK - RequirementInformation found')"
 
