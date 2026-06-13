@@ -42,7 +42,7 @@ jobs:
             .buildozer
             ~/.gradle
             ~/.android
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v8
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v9
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
@@ -61,12 +61,12 @@ jobs:
             autoconf automake libtool pkg-config \
             zlib1g-dev libltdl-dev
 
-      - name: Install buildozer and cython (with pip downgrade)
+      - name: Install buildozer and cython
         run: |
-          # اجباری کردن نسخهٔ قدیمی pip که با ابزارهای داخلی سازگار باشد
           python -m pip install --upgrade pip==23.0
-          python -m pip --version   # چاپ نسخه برای اطمینان
-          pip install buildozer
+          python -m pip --version
+          # نصب آخرین نسخه buildozer از گیتهاب (نه نسخه قدیمی PyPI)
+          pip install --upgrade git+https://github.com/kivy/buildozer.git
           pip install cython==0.29.36
 
       - name: Set up Android SDK
