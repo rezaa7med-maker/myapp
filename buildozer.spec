@@ -1,3 +1,6 @@
+[buildozer]
+log_level = 2
+
 [app]
 title = Campaign2
 package.name = myapp2
@@ -21,5 +24,4 @@ android.minapi = 21
 android.ndk = 25c
 android.archs = arm64-v8a, armeabi-v7a
 android.accept_sdk_license = True
-android.sdk_build_tools = 31.0.0
 android.enable_immersive_mode = False
