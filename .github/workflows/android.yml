@@ -24,9 +24,9 @@ jobs:
           fi
           
           if grep -q '^android.p4a_args' buildozer.spec; then
-            sed -i 's/^android.p4a_args = .*/android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args="--no-cache-dir"/' buildozer.spec
+            sed -i 's/^android.p4a_args = .*/android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args="--no-cache-dir --disable-pip-version-check"/' buildozer.spec
           else
-            echo "android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args=\"--no-cache-dir\"" >> buildozer.spec
+            echo 'android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args="--no-cache-dir --disable-pip-version-check"' >> buildozer.spec
           fi
 
       - name: Set up Python
@@ -49,21 +49,21 @@ jobs:
             .buildozer
             \~/.gradle
             \~/.android
-          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v17
+          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v18
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
       - name: Clean previous builds
         run: python -m buildozer android clean || true
 
-      - name: Install system deps
+      - name: Install system dependencies
         run: |
           sudo apt update
           sudo apt install -y git zip unzip openjdk-17-jdk python3-pip python3-venv \
             libffi-dev libssl-dev build-essential autoconf automake libtool pkg-config \
             zlib1g-dev libltdl-dev
 
-      - name: Install buildozer + cython
+      - name: Install buildozer and cython
         run: |
           pip install --no-cache-dir git+https://github.com/kivy/buildozer.git
           pip install --no-cache-dir cython==0.29.36
@@ -71,18 +71,19 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept SDK licenses
+      - name: Accept licenses
         run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses
 
       - name: Build APK
         env:
           CFLAGS: "-Wno-error=implicit-function-declaration"
           PIP_NO_CACHE_DIR: "1"
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: python -m buildozer android debug
 
-      - name: List outputs
+      - name: List APK
         run: |
-          ls -la bin || true
+          ls -la bin/ || true
           find . -name "*.apk" -type f || true
 
       - name: Upload APK
