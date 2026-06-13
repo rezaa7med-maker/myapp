@@ -16,11 +16,13 @@ jobs:
       - name: Update buildozer.spec with stable configuration
         run: |
           sed -i 's/^requirements = .*/requirements = hostpython3==3.10.11, python3==3.10.11, kivy==2.3.0, requests, feedparser==6.0.11, certifi/' buildozer.spec
+          
           if grep -q '^android.ndk' buildozer.spec; then
             sed -i 's/^android.ndk = .*/android.ndk = 25c/' buildozer.spec
           else
             echo "android.ndk = 25c" >> buildozer.spec
           fi
+          
           if grep -q '^android.p4a_args' buildozer.spec; then
             sed -i 's/^android.p4a_args = .*/android.p4a_args = --no-upgrade-pip/' buildozer.spec
           else
@@ -42,12 +44,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/pip
-            ~/.buildozer
+            \~/.cache/pip
+            \~/.buildozer
             .buildozer
-            ~/.gradle
-            ~/.android
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-v14
+            \~/.gradle
+            \~/.android
+          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v15
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
@@ -65,13 +67,6 @@ jobs:
             build-essential \
             autoconf automake libtool pkg-config \
             zlib1g-dev libltdl-dev
-
-      - name: Force downgrade pip to compatible version (21.2.4)
-        run: |
-          python -m pip cache purge
-          python -m pip install --force-reinstall --no-cache-dir pip==21.2.4
-          python -m pip --version
-          python -c "from pip._vendor.resolvelib.structs import RequirementInformation; print('OK - RequirementInformation found')"
 
       - name: Install buildozer and cython
         run: |
