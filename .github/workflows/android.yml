@@ -24,9 +24,9 @@ jobs:
           fi
           
           if grep -q '^android.p4a_args' buildozer.spec; then
-            sed -i 's/^android.p4a_args = .*/android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args="--no-cache-dir --disable-pip-version-check --force-reinstall"' buildozer.spec
+            sed -i 's/^android.p4a_args = .*/android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args="--no-cache-dir --disable-pip-version-check --force-reinstall --no-deps"/' buildozer.spec
           else
-            echo 'android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args="--no-cache-dir --disable-pip-version-check --force-reinstall"' >> buildozer.spec
+            echo 'android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args="--no-cache-dir --disable-pip-version-check --force-reinstall --no-deps"' >> buildozer.spec
           fi
 
       - name: Set up Python
@@ -49,24 +49,28 @@ jobs:
             .buildozer
             \~/.gradle
             \~/.android
-          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v19
+          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v20
           restore-keys: Linux-buildozer-
 
-      - name: Clean
+      - name: Clean previous build
         run: python -m buildozer android clean || true
 
-      - name: Install system deps
-        run: sudo apt update && sudo apt install -y git zip unzip openjdk-17-jdk python3-pip python3-venv build-essential libffi-dev libssl-dev autoconf automake libtool pkg-config zlib1g-dev libltdl-dev
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git zip unzip openjdk-17-jdk python3-pip python3-venv \
+            build-essential libffi-dev libssl-dev autoconf automake libtool \
+            pkg-config zlib1g-dev libltdl-dev
 
-      - name: Install buildozer
+      - name: Install buildozer + Cython
         run: |
           pip install --no-cache-dir git+https://github.com/kivy/buildozer.git
           pip install --no-cache-dir cython==0.29.36
 
-      - name: Setup Android
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept licenses
+      - name: Accept SDK licenses
         run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Build APK
@@ -76,8 +80,11 @@ jobs:
           PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: python -m buildozer android debug
 
-      - name: Upload APK
+      - name: List and Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: myapp-apk
-          path: bin/*.apk
+          path: |
+            bin/*.apk
+            .buildozer/android/platform/build-*/outputs/apk/debug/*.apk
+          if-no-files-found: warn
