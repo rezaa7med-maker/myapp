@@ -13,22 +13,6 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Update buildozer.spec
-        run: |
-          sed -i 's/^requirements = .*/requirements = hostpython3==3.10.11, python3==3.10.11, kivy==2.3.0, requests, feedparser==6.0.11, certifi/' buildozer.spec
-          
-          if grep -q '^android.ndk' buildozer.spec; then
-            sed -i 's/^android.ndk = .*/android.ndk = 25c/' buildozer.spec
-          else
-            echo "android.ndk = 25c" >> buildozer.spec
-          fi
-          
-          if grep -q '^android.p4a_args' buildozer.spec; then
-            sed -i 's/^android.p4a_args = .*/android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args="--no-cache-dir --disable-pip-version-check --force-reinstall --no-deps"/' buildozer.spec
-          else
-            echo 'android.p4a_args = --no-upgrade-pip --no-ensurepip --pip-args="--no-cache-dir --disable-pip-version-check --force-reinstall --no-deps"' >> buildozer.spec
-          fi
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -40,7 +24,7 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Cache
+      - name: Cache Buildozer
         uses: actions/cache@v4
         with:
           path: |
@@ -49,33 +33,29 @@ jobs:
             .buildozer
             \~/.gradle
             \~/.android
-          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v21
+          key: ${{ runner.os }}-buildozer-arm64-v24
           restore-keys: Linux-buildozer-
 
-      - name: Clean
-        run: python -m buildozer android clean || true
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git zip unzip build-essential libffi-dev libssl-dev autoconf automake libtool pkg-config zlib1g-dev libltdl-dev
 
-      - name: Install system deps
-        run: sudo apt update && sudo apt install -y git zip unzip openjdk-17-jdk python3-pip python3-venv build-essential libffi-dev libssl-dev autoconf automake libtool pkg-config zlib1g-dev libltdl-dev
-
-      - name: Install buildozer
+      - name: Install Buildozer & Cython
         run: |
           pip install --no-cache-dir git+https://github.com/kivy/buildozer.git
-          pip install --no-cache-dir cython==0.29.36
+          pip install --no-cache-dir cython==0.29.36 pip==23.3.2
 
-      - name: Setup Android
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Accept licenses
         run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Patch pip upgrade in p4a (critical fix)
-        run: |
-          # Prevent pip upgrade inside venv
-          find .buildozer -name "*.py" -path "*/pythonforandroid/*" -exec sed -i 's/pip install -U pip/pip install --no-deps pip==23.3.2/' {} + || true
-          find .buildozer -name "build.py" -exec sed -i 's/pip install -U pip/pip install --no-deps pip==23.3.2/' {} + || true
+      - name: Clean old build
+        run: python -m buildozer android clean || true
 
-      - name: Build APK
+      - name: Build APK (arm64 only)
         env:
           CFLAGS: "-Wno-error=implicit-function-declaration"
           PIP_NO_CACHE_DIR: "1"
@@ -87,3 +67,4 @@ jobs:
         with:
           name: myapp-apk
           path: bin/*.apk
+          if-no-files-found: warn
