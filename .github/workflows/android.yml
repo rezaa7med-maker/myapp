@@ -49,29 +49,31 @@ jobs:
             .buildozer
             \~/.gradle
             \~/.android
-          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v20
+          key: \( {{ runner.os }}-buildozer- \){{ hashFiles('buildozer.spec') }}-v21
           restore-keys: Linux-buildozer-
 
-      - name: Clean previous build
+      - name: Clean
         run: python -m buildozer android clean || true
 
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git zip unzip openjdk-17-jdk python3-pip python3-venv \
-            build-essential libffi-dev libssl-dev autoconf automake libtool \
-            pkg-config zlib1g-dev libltdl-dev
+      - name: Install system deps
+        run: sudo apt update && sudo apt install -y git zip unzip openjdk-17-jdk python3-pip python3-venv build-essential libffi-dev libssl-dev autoconf automake libtool pkg-config zlib1g-dev libltdl-dev
 
-      - name: Install buildozer + Cython
+      - name: Install buildozer
         run: |
           pip install --no-cache-dir git+https://github.com/kivy/buildozer.git
           pip install --no-cache-dir cython==0.29.36
 
-      - name: Setup Android SDK
+      - name: Setup Android
         uses: android-actions/setup-android@v3
 
-      - name: Accept SDK licenses
+      - name: Accept licenses
         run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Patch pip upgrade in p4a (critical fix)
+        run: |
+          # Prevent pip upgrade inside venv
+          find .buildozer -name "*.py" -path "*/pythonforandroid/*" -exec sed -i 's/pip install -U pip/pip install --no-deps pip==23.3.2/' {} + || true
+          find .buildozer -name "build.py" -exec sed -i 's/pip install -U pip/pip install --no-deps pip==23.3.2/' {} + || true
 
       - name: Build APK
         env:
@@ -80,11 +82,8 @@ jobs:
           PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: python -m buildozer android debug
 
-      - name: List and Upload APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: myapp-apk
-          path: |
-            bin/*.apk
-            .buildozer/android/platform/build-*/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+          path: bin/*.apk
