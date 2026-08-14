@@ -127,8 +127,9 @@ def collect_news_safe(log_func=print):
             for e in entries:
                 title = normalize_title(getattr(e, "title", ""))
                 summary = getattr(e, "summary", "").strip() or title
+                link = getattr(e, "link", "") or ""
                 if title:
-                    local_items.append((title, summary))
+                    local_items.append((title, summary, link))
             with lock:
                 total_entries += len(entries)
                 items.extend(local_items)
@@ -234,19 +235,24 @@ def send_emails_safe(sender_email, app_password, to_emails, news_items,
                         )
                         server.login(sender_email, app_password)
 
-                    title, summary = news_items[i]
+                    title, summary, link = news_items[i]
                     if progress_cb:
                         try:
                             progress_cb(i + 1, total_n)
                         except Exception:
                             pass
 
+                    body_parts = [summary]
+                    if link:
+                        body_parts.append("")
+                        body_parts.append(link)
+
                     msg = "\n".join(
                         [
                             f"To: {', '.join(to_emails)}",
                             f"Subject: {title}",
                             "",
-                            summary,
+                            *body_parts,
                         ]
                     )
                     server.sendmail(sender_email, to_emails, msg.encode("utf-8"))
@@ -1222,12 +1228,12 @@ class NewsApp(App):
                 elapsed = time.time() - start
                 unique_titles = []
                 seen = set()
-                for t, s in items:
+                for t, s, link in items:
                     if t not in seen:
-                        unique_titles.append((t, s))
+                        unique_titles.append((t, s, link))
                         seen.add(t)
                 sent_count = len(self.sent_titles)
-                remaining_new = len([t for t, _ in unique_titles if t not in self.sent_titles])
+                remaining_new = len([t for t, _, _ in unique_titles if t not in self.sent_titles])
                 Clock.schedule_once(
                     lambda dt: (
                         self.set_status(
@@ -1273,11 +1279,11 @@ class NewsApp(App):
                 items, total = collect_news_safe()
                 unique_items = []
                 seen = set()
-                for t, s in items:
+                for t, s, link in items:
                     if t not in seen:
-                        unique_items.append((t, s))
+                        unique_items.append((t, s, link))
                         seen.add(t)
-                new_items = [(t, s) for (t, s) in unique_items if t not in self.sent_titles]
+                new_items = [(t, s, link) for (t, s, link) in unique_items if t not in self.sent_titles]
                 batch_items = new_items[:max_emails]
                 if not batch_items:
                     Clock.schedule_once(
@@ -1328,11 +1334,11 @@ class NewsApp(App):
                         time.sleep(random.uniform(*SENDER_DELAY_RANGE))
 
                 if success_count > 0:
-                    sent_now_titles = [t for t, _ in batch_items]
+                    sent_now_titles = [t for t, _, _ in batch_items]
                     append_sent_titles(self.sent_titles_path, sent_now_titles)
                     self.sent_titles.update(sent_now_titles)
 
-                remaining_after = len([t for t, _ in new_items if t not in set(t for t, _ in batch_items)])
+                remaining_after = len([t for t, _, _ in new_items if t not in set(t for t, _, _ in batch_items)])
                 out = (
                     "Finished.\n"
                     f"Batch sent: {len(batch_items)}\n"
