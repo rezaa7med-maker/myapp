@@ -2,9 +2,9 @@
 log_level = 2
 
 [app]
-title = Campaign3
-package.name = myapp3
-package.domain = com.rezaa7med.campaign3
+title = Campaign2
+package.name = myapp2
+package.domain = com.rezaa7med.campaign2
 icon.filename = icon.png
 
 source.dir = .
